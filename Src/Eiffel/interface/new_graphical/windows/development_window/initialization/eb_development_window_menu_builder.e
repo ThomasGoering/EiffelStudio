@@ -1011,11 +1011,11 @@ feature {EB_EXTERNAL_COMMANDS_EDITOR} -- Menu Building
 			auto_recycle (l_command_menu_item)
 			l_tools_menu.extend (l_command_menu_item)
 
-			if attached es_cloud_s.service as l_cloud_service then
-				l_command_menu_item := develop_window.show_cloud_account_cmd.new_menu_item
-				auto_recycle (l_command_menu_item)
-				l_tools_menu.extend (l_command_menu_item)
-			end
+--			if attached es_cloud_s.service as l_cloud_service then
+--				l_command_menu_item := develop_window.show_cloud_account_cmd.new_menu_item
+--				auto_recycle (l_command_menu_item)
+--				l_tools_menu.extend (l_command_menu_item)
+--			end
 
 				-- Separator -------------------------------------------------
 			l_tools_menu.extend (create {EV_MENU_SEPARATOR})
@@ -1660,7 +1660,7 @@ feature -- Docking library menu items
 		end
 
 note
-	copyright: "Copyright (c) 1984-2023, Eiffel Software"
+	copyright: "Copyright (c) 1984-2024, Eiffel Software"
 	license:   "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[

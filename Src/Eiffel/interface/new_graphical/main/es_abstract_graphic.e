@@ -253,7 +253,8 @@ feature {NONE} -- Implementation (preparation of all widgets)
 				-- Save EIS storage when project is closed.
 			eiffel_project.manager.close_agents.extend (agent eis_manager.save_storage)
 
-			launch_interface
+--			launch_interface
+			load_interface
 		end
 
 	launch_interface
@@ -597,7 +598,7 @@ invariant
 		valid_branded_edition: is_branded_edition implies not edition_name.is_whitespace
 
 note
-	copyright: "Copyright (c) 1984-2022, Eiffel Software"
+	copyright: "Copyright (c) 1984-2024, Eiffel Software"
 	license:   "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[

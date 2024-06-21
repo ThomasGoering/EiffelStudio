@@ -189,11 +189,11 @@ feature -- Access
 		require
 			not_is_recycled: not is_recycled
 		do
-			if attached {ES_CLOUD_ACCOUNT_TOOL} develop_window.shell_tools.tool ({ES_CLOUD_ACCOUNT_TOOL}) as l_tool then
-				Result := l_tool
-			else
-					-- Cloud service is not activated!
-			end
+--			if attached {ES_CLOUD_ACCOUNT_TOOL} develop_window.shell_tools.tool ({ES_CLOUD_ACCOUNT_TOOL}) as l_tool then
+--				Result := l_tool
+--			else
+--					-- Cloud service is not activated!
+--			end
 		end
 
 	scm_tool: detachable ES_SCM_TOOL
@@ -575,7 +575,7 @@ feature {NONE} -- Internal implementation cache
 			-- Note: Do not use directly!
 
 ;note
-	copyright:	"Copyright (c) 1984-2021, Eiffel Software"
+	copyright:	"Copyright (c) 1984-2024, Eiffel Software"
 	license:	"GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[
