@@ -16,7 +16,7 @@ inherit
 			prepare_to_save
 		end
 
-	MD_EMIT_SHARED
+	MD_EMIT_IMPLEMENTATION
 
 	PE_TABLE_CONSTANTS
 
@@ -40,10 +40,7 @@ feature {NONE}
 			initialize_guid
 			initialize_unit
 			create tables_header
-			create assembly_emitter.make (tables, pe_writer)
 				-- we don't initialize the compilation unit since we don't provide the name of it (similar to the COM interface)
-			initialize_entry_size
-
 		ensure
 			module_guid_set: module_guid.count = 16
 		end
@@ -65,55 +62,19 @@ feature {NONE}
 			end
 		end
 
-	initialize_entry_size
-		do
-			create entry_sizes.make (32)
-			entry_sizes.force (agent module_table_entry_size, {PE_TABLES}.tModule)
-			entry_sizes.force (agent type_ref_entry_size, {PE_TABLES}.tTypeRef)
-			entry_sizes.force (agent type_def_table_entry_size, {PE_TABLES}.tTypeDef)
-			entry_sizes.force (agent field_table_entry_size, {PE_TABLES}.tField)
-			entry_sizes.force (agent method_def_table_entry_size, {PE_TABLES}.tMethodDef)
-			entry_sizes.force (agent param_table_entry_size, {PE_TABLES}.tParam)
-			entry_sizes.force (agent interface_impl_table_entry_size, {PE_TABLES}.tInterfaceImpl)
-			entry_sizes.force (agent member_ref_table_entry_size, {PE_TABLES}.tMemberRef)
-			entry_sizes.force (agent constant_table_entry_size, {PE_TABLES}.tConstant)
-			entry_sizes.force (agent custom_attribute_table_entry_size, {PE_TABLES}.tCustomAttribute)
-			entry_sizes.force (agent field_marshal_table_entry_size, {PE_TABLES}.tFieldMarshal)
-			entry_sizes.force (agent decl_security_table_entry_size, {PE_TABLES}.tDeclSecurity)
-			entry_sizes.force (agent class_layout_table_entry_size, {PE_TABLES}.tClassLayout)
-			entry_sizes.force (agent field_layout_table_entry_size, {PE_TABLES}.tFieldLayout)
-			entry_sizes.force (agent standalone_sig_table_entry_size, {PE_TABLES}.tStandaloneSig)
-			entry_sizes.force (agent property_map_table_entry_size, {PE_TABLES}.tPropertyMap)
-			entry_sizes.force (agent property_table_entry_size, {PE_TABLES}.tProperty)
-			entry_sizes.force (agent method_semantics_table_entry_size, {PE_TABLES}.tMethodSemantics)
-			entry_sizes.force (agent method_impl_table_entry_size, {PE_TABLES}.tMethodImpl)
-			entry_sizes.force (agent module_ref_table_entry_size, {PE_TABLES}.tModuleRef)
-			entry_sizes.force (agent type_spec_table_entry_size, {PE_TABLES}.tTypeSpec)
-			entry_sizes.force (agent impl_map_table_entry_size, {PE_TABLES}.tImplMap)
-			entry_sizes.force (agent field_rva_table_entry_size, {PE_TABLES}.tFieldRVA)
-			entry_sizes.force (agent assembly_table_entry_size, {PE_TABLES}.tAssemblyDef)
-			entry_sizes.force (agent assembly_ref_table_entry_size, {PE_TABLES}.tAssemblyRef)
-			entry_sizes.force (agent file_table_entry_size, {PE_TABLES}.tFile)
-			entry_sizes.force (agent exported_type_table_entry_size, {PE_TABLES}.tExportedType)
-			entry_sizes.force (agent manifest_resource_table_entry_size, {PE_TABLES}.tManifestResource)
-			entry_sizes.force (agent nested_class_table_entry_size, {PE_TABLES}.tNestedClass)
-			entry_sizes.force (agent generic_param_table_entry_size, {PE_TABLES}.tGenericParam)
-			entry_sizes.force (agent method_spec_table_entry_size, {PE_TABLES}.tMethodSpec)
-			entry_sizes.force (agent generic_param_constraint_table_entry_size, {PE_TABLES}.tGenericParamConstraint)
-		end
-
 	initialize_unit
 			-- Initialize the compilation unit
 		local
 			l_type_def: PE_TYPEDEF_OR_REF
 			l_table: PE_TYPE_DEF_TABLE_ENTRY
+			l_unused_token: NATURAL_32
 		do
 				-- initializes the necessary metadata tables for the module and type definition entries.
 			module_index := pe_writer.hash_string ({STRING_32} "<Module>")
 
 			create l_type_def.make_with_tag_and_index ({PE_TYPEDEF_OR_REF}.typedef, 0)
 			create l_table.make_with_uninitialized_field_and_method (0, module_index, 0, l_type_def)
-			pe_index := add_table_entry (l_table)
+			l_unused_token := add_table_entry (l_table)
 		end
 
 	initialize_guid
@@ -185,10 +146,6 @@ feature -- Access
 
 			Result := compute_metadata_size.to_integer_32
 		end
-
-	entry_sizes: HASH_TABLE [FUNCTION [NATURAL_32], NATURAL_32]
-			-- Hash table of functions to compute the size of a Metadata Table.
-			-- The key is the Metadata Table Key.
 
 	retrieve_user_string (a_token: INTEGER): STRING_32
 			-- Retrieve the user string for `token'.
@@ -423,13 +380,23 @@ feature -- Save
 	prepare_to_save
 			-- Prepare data to be save
 		local
+			max_field_idx, max_meth_idx, max_param_idx: NATURAL_32
 			field_idx, meth_idx, param_idx: NATURAL_32
 			l_missing_field_index_entries: ARRAYED_LIST [PE_TYPE_DEF_TABLE_ENTRY]
 			l_missing_method_index_entries: ARRAYED_LIST [PE_TYPE_DEF_TABLE_ENTRY]
 			l_missing_param_index_entries: ARRAYED_LIST [PE_METHOD_DEF_TABLE_ENTRY]
 		do
 			Precursor
-				-- Update all uninitialized PE_LIST (FieldList, MethodList, ParamList, ...)			
+				-- Update all uninitialized PE_LIST (FieldList, MethodList, ParamList, ...)	
+			if attached md_table ({PE_TABLES}.tmethoddef) as tb then
+				max_meth_idx := tb.next_index
+			end
+			if attached md_table ({PE_TABLES}.tfield) as tb then
+				max_field_idx := tb.next_index
+			end
+			if attached md_table ({PE_TABLES}.tparam) as tb then
+				max_param_idx := tb.next_index
+			end
 
 				-- TypeDef table
 			if attached md_table ({PE_TABLES}.ttypedef) as typedef_tb then
@@ -480,7 +447,7 @@ feature -- Save
 					across
 						l_missing_field_index_entries as t
 					loop
-						t.set_field_list_index (field_idx + 1)
+						t.set_field_list_index (max_field_idx)
 					end
 					l_missing_field_index_entries := Void
 				end
@@ -488,7 +455,7 @@ feature -- Save
 					across
 						l_missing_method_index_entries as t
 					loop
-						t.set_method_list_index (meth_idx + 1)
+						t.set_method_list_index (max_meth_idx)
 					end
 					l_missing_method_index_entries := Void
 				end
@@ -525,7 +492,7 @@ feature -- Save
 					across
 						l_missing_param_index_entries as t
 					loop
-						t.set_param_list_index (param_idx + 1)
+						t.set_param_list_index (max_param_idx)
 					end
 					l_missing_param_index_entries := Void
 				end
@@ -549,7 +516,10 @@ feature -- Save
 
 	append_to_file (f: FILE)
 			-- Append current assembly to file `f`.
+		local
+			l_expected_size: INTEGER
 		do
+			l_expected_size := f.count + save_size
 				-- This code also writes the PE_DOTNET_META_HEADER
 				-- see II.24.2 File headers, II.24.2.1 Metadata root
 				-- https://www.ecma-international.org/wp-content/uploads/ECMA-335_6th_edition_june_2012.pdf#page=297
@@ -567,6 +537,7 @@ feature -- Save
 				check should_not_happen: False end
  				align (f, 4)
 			end
+			check valid_size: l_expected_size = f.count end
 		end
 
 feature {NONE} -- Implementation
@@ -835,10 +806,11 @@ feature -- Settings
 		local
 			l_name_index: NATURAL_32
 			l_entry: PE_TABLE_ENTRY_BASE
+			l_unused_token: NATURAL_32
 		do
 			l_name_index := pe_writer.hash_string (a_name.string_32)
 			create {PE_MODULE_TABLE_ENTRY} l_entry.make_with_data (l_name_index, guid_index)
-			pe_index := add_table_entry (l_entry)
+			l_unused_token := add_table_entry (l_entry)
 		end
 
 	set_method_rva (method_token, rva: INTEGER)
@@ -929,8 +901,7 @@ feature -- Definition: Access
 				-- TODO: ResolutionScope : null needs to be checked.
 
 			create {PE_TYPE_REF_TABLE_ENTRY} l_entry.make_with_data (create {PE_RESOLUTION_SCOPE}.make_with_tag_and_index (l_scope, l_tuple.table_row_index), l_name_index, l_namespace_index)
-			pe_index := add_table_entry (l_entry)
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_entry).to_integer_32
 		end
 
 	define_member_ref (method_name: CLI_STRING; in_class_token: INTEGER; a_signature: MD_SIGNATURE): INTEGER
@@ -955,10 +926,7 @@ feature -- Definition: Access
 			create l_member_ref_entry.make_with_data (l_member_ref, l_name_index, l_method_signature)
 
 				-- Add the new PE_MEMBER_REF_TABLE_ENTRY instance to the metadata tables.
-			pe_index := add_table_entry (l_member_ref_entry)
-
-				-- Return the generated token.
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_member_ref_entry).to_integer_32
 		end
 
 	define_module_ref (a_name: CLI_STRING): INTEGER
@@ -973,10 +941,7 @@ feature -- Definition: Access
 			create l_module_ref_entry.make_with_data (l_name_index)
 
 				-- Add the new PE_MODULE_REF_TABLE_ENTRY instance to the metadata tables.
-			pe_index := add_table_entry (l_module_ref_entry)
-
-				-- Return the generated token.
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_module_ref_entry).to_integer_32
 		end
 
 feature -- Definition: Creation
@@ -1010,6 +975,7 @@ feature -- Definition: Creation
 			l_type_name: STRING_32
 --			l_field_index, l_method_index: NATURAL
 			l_class_index: NATURAL_32
+			last_token: NATURAL_32
 		do
 			l_type_name := type_name.string_32
 			debug ("il_emitter_table")
@@ -1038,9 +1004,8 @@ feature -- Definition: Creation
 --			l_method_index := 1 -- Not yet initialized			
 
 			create {PE_TYPE_DEF_TABLE_ENTRY} l_entry.make_with_uninitialized_field_and_method (flags, l_name_index, l_namespace_index, l_extends)
-			pe_index := add_table_entry (l_entry)
-			l_class_index := pe_index
-			Result := last_token.to_integer_32
+			l_class_index := next_table_index (l_entry.table_index)
+			Result := add_table_entry (l_entry).to_integer_32
 			debug ("il_emitter_table")
 				print ({STRING_32} " -> index=" + l_class_index.out + " token="+ Result.to_hex_string + "%N")
 			end
@@ -1053,7 +1018,7 @@ feature -- Definition: Creation
 							l_extends := create_type_def_or_ref (i, imp_tuple.table_row_index)
 							create {PE_INTERFACE_IMPL_TABLE_ENTRY} l_entry.make_with_data (l_class_index, l_extends)
 								--note: l_dis is not used.
-							pe_index := add_table_entry (l_entry)
+							last_token := add_table_entry (l_entry)
 						else
 							check has_info: False end
 						end
@@ -1081,10 +1046,7 @@ feature -- Definition: Creation
 			create l_type_def_entry.make_with_data (l_type_signature)
 
 				-- Add the new PE_TYPE_SPEC_TABLE_ENTRY instance to the metadata tables.
-			pe_index := add_table_entry (l_type_def_entry)
-
-				-- Return the generated token.
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_type_def_entry).to_integer_32
 		end
 
 	define_exported_type (type_name: CLI_STRING; implementation_token: INTEGER;
@@ -1123,12 +1085,9 @@ feature -- Definition: Creation
 
 				-- Add the new PE_METHOD_DEF_TABLE_ENTRY instance to the metadata tables.
 			l_method_index := next_table_index ({PE_TABLES}.tmethoddef)
-			pe_index := add_table_entry (l_method_def_entry)
-
-				-- Return the generated token.
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_method_def_entry).to_integer_32
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> ("+ l_method_index.out +") index=" + pe_index.out + " token=" + Result.to_hex_string +"%N")
+				print ({STRING_32} " -> ("+ l_method_index.out +") index=" + l_method_index.out + " token=" + Result.to_hex_string +"%N")
 			end
 
 				-- Extract table type and row from the in_class_token
@@ -1151,6 +1110,8 @@ feature -- Definition: Creation
 			l_tuple: like extract_table_type_and_row
 			l_method_body: PE_METHOD_DEF_OR_REF
 			l_method_declaration: PE_METHOD_DEF_OR_REF
+			l_method_impl_index: NATURAL_32
+			last_token : NATURAL_32
 		do
 			debug ("il_emitter_table")
 				print ({STRING_32} "MethodImpl: class=" + in_class_token.to_hex_string + " method="+ method_token.to_hex_string + " used_method_declaration_token=" + used_method_declaration_token.to_hex_string)
@@ -1167,10 +1128,11 @@ feature -- Definition: Creation
 			create l_method_impl_entry.make_with_data (l_tuple.table_row_index, l_method_body, l_method_declaration)
 
 				-- Add the new PE_METHOD_IMPL_TABLE_ENTRY instance to the metadata tables.
-			pe_index := add_table_entry (l_method_impl_entry)
+			l_method_impl_index := next_table_index (l_method_impl_entry.table_index)
+			last_token := add_table_entry (l_method_impl_entry)
 
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> index=" + pe_index.out + " token=" + last_token.to_hex_string +"%N")
+				print ({STRING_32} " -> index=" + l_method_impl_index.out + " token=" + last_token.to_hex_string +"%N")
 			end
 		end
 
@@ -1183,7 +1145,7 @@ feature -- Definition: Creation
 			l_semantics: PE_SEMANTICS
 			l_table: PE_TABLE_ENTRY_BASE
 			l_tuple: like extract_table_type_and_row
-			l_property_index: NATURAL_32
+			l_property_index, l_unused_token: NATURAL_32
 		do
 			debug ("il_emitter_table")
 				print ({STRING_32} "Property: type=" + type_token.to_hex_string + " name="+ name.string_32 + " .. ")
@@ -1199,34 +1161,35 @@ feature -- Definition: Creation
 				)
 
 				-- Add the new PE_PROPERTY_TABLE_ENTRY instance to the metadata tables.
-			l_property_index := next_table_index ({PE_TABLES}.tproperty)
-			pe_index := add_table_entry (l_property)
+			l_property_index := next_table_index (l_property.table_index)
 				-- Return the metadata token for the new property.
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_property).to_integer_32
 
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> index=" + pe_index.out + " token=" + last_token.to_hex_string +"%N")
+				print ({STRING_32} " -> index=" + l_property_index.out + " token=" + Result.to_hex_string +"%N")
 			end
 
 				-- Define the method implementations for the getter and setter, if provided.
 			create l_semantics.make_with_tag_and_index ({PE_SEMANTICS}.property, l_property_index)
 			if getter_token /= 0 then
 				l_tuple := extract_table_type_and_row (getter_token)
-				create {PE_METHOD_SEMANTICS_TABLE_ENTRY} l_table.make_with_data
-					({PE_METHOD_SEMANTICS_TABLE_ENTRY}.getter.to_natural_16, l_tuple.table_row_index, l_semantics)
-				pe_index := add_table_entry (l_table)
+				create {PE_METHOD_SEMANTICS_TABLE_ENTRY} l_table.make_with_data (
+						{PE_METHOD_SEMANTICS_TABLE_ENTRY}.getter.to_natural_16, l_tuple.table_row_index, l_semantics
+					)
+				l_unused_token := add_table_entry (l_table)
 			end
 
 			if setter_token /= 0 then
 				l_tuple := extract_table_type_and_row (setter_token)
-				create {PE_METHOD_SEMANTICS_TABLE_ENTRY} l_table.make_with_data
-					({PE_METHOD_SEMANTICS_TABLE_ENTRY}.setter.to_natural_16, l_tuple.table_row_index, l_semantics)
-				pe_index := add_table_entry (l_table)
+				create {PE_METHOD_SEMANTICS_TABLE_ENTRY} l_table.make_with_data (
+						{PE_METHOD_SEMANTICS_TABLE_ENTRY}.setter.to_natural_16, l_tuple.table_row_index, l_semantics
+					)
+				l_unused_token := add_table_entry (l_table)
 			end
 
 			l_tuple := extract_table_type_and_row (type_token)
 			create {PE_PROPERTY_MAP_TABLE_ENTRY} l_table.make_with_data (l_tuple.table_row_index, l_property_index)
-			pe_index := add_table_entry (l_table)
+			l_unused_token := add_table_entry (l_table)
 		end
 
 	define_pinvoke_map (method_token, mapping_flags: INTEGER;
@@ -1237,6 +1200,7 @@ feature -- Definition: Creation
 			l_name_index: NATURAL_32
 			l_impl_map_entry: PE_IMPL_MAP_TABLE_ENTRY
 			l_tuple_method: like extract_table_type_and_row
+			l_unused_token: NATURAL_32
 		do
 			l_tuple_method := extract_table_type_and_row (method_token)
 
@@ -1250,7 +1214,7 @@ feature -- Definition: Creation
 			create l_impl_map_entry.make_with_data (mapping_flags.to_integer_16, l_member_forwarded, l_name_index, module_ref.to_natural_32)
 
 				-- Add the PE_IMPL_MAP_TABLE_ENTRY instance to the table
-			pe_index := add_table_entry (l_impl_map_entry)
+			l_unused_token := add_table_entry (l_impl_map_entry)
 		end
 
 	define_parameter (in_method_token: INTEGER; param_name: CLI_STRING;
@@ -1294,10 +1258,7 @@ feature -- Definition: Creation
 
 				-- Add the new PE_PARAM_TABLE_ENTRY instance to the metadata tables.
 			l_param_entry_index := next_table_index ({PE_TABLES}.tparam)
-			pe_index := add_table_entry (l_param_entry)
-
-				-- Return the generated token.
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_param_entry).to_integer_32
 			debug ("il_emitter_table")
 				print ({STRING_32} " -> index=" + l_param_index.out + " token="+ Result.to_hex_string + "%N")
 			end
@@ -1319,6 +1280,7 @@ feature -- Definition: Creation
 			l_tuple: like extract_table_type_and_row
 			l_parent: PE_FIELD_MARSHAL
 			l_index_native_type: NATURAL_32
+			l_unused_token: NATURAL_32
 		do
 				-- Extract the table type and row index from `a_token`.
 			l_tuple := extract_table_type_and_row (a_token)
@@ -1333,7 +1295,7 @@ feature -- Definition: Creation
 			create l_entry.make_with_data (l_parent, l_index_native_type)
 
 				-- Add the new `PE_FIELD_MARSHAL_TABLE_ENTRY` instance to the metadata tables.
-			pe_index := add_table_entry (l_entry)
+			l_unused_token := add_table_entry (l_entry)
 		end
 
 	define_field (field_name: CLI_STRING; in_class_token: INTEGER; field_flags: INTEGER; a_signature: MD_FIELD_SIGNATURE): INTEGER
@@ -1355,12 +1317,12 @@ feature -- Definition: Creation
 			create l_field_def_entry.make_with_data (field_flags, l_name_index, l_field_signature)
 
 				-- Add the new PE_FIELD_TABLE_ENTRY instance to the metadata tables.
-			l_field_index := next_table_index ({PE_TABLES}.tfield)
-			pe_index := add_table_entry (l_field_def_entry)
+			l_field_index := next_table_index (l_field_def_entry.table_index)
 				-- Return the generated token.
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_field_def_entry).to_integer_32
+
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> ("+ l_field_index.out +") index=" + pe_index.out + " token=" + Result.to_hex_string +"%N")
+				print ({STRING_32} " -> ("+ l_field_index.out +") index=" + l_field_index.out + " token=" + Result.to_hex_string +"%N")
 			end
 
 			if
@@ -1383,9 +1345,7 @@ feature -- Definition: Creation
 			l_signature_hash := hash_blob (a_signature.as_array, a_signature.count.to_natural_32)
 
 			create l_signature_entry.make_with_data (l_signature_hash)
-			pe_index := add_table_entry (l_signature_entry)
-
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_signature_entry).to_integer_32
 		end
 
 	define_string_constant (field_name: CLI_STRING; in_class_token: INTEGER;
@@ -1417,12 +1377,12 @@ feature -- Definition: Creation
 			blob_count: INTEGER
 			l_ca: PE_CUSTOM_ATTRIBUTE
 			l_ca_type: PE_CUSTOM_ATTRIBUTE_TYPE
+			pe_index: NATURAL_32
 		do
 				-- See II.22.10 CustomAttribute : 0x0C
 
 				-- Extract table type and row from the owner token
 			l_owner_tuple := extract_table_type_and_row (owner)
---			pe_index := l_owner_tuple.table_row_index
 
 				-- Extract table type and row from the l_constructor_tuple token
 			l_constructor_tuple := extract_table_type_and_row (constructor)
@@ -1449,10 +1409,9 @@ feature -- Definition: Creation
 			create l_ca_entry.make_with_data (l_ca, l_ca_type, l_ca_blob)
 
 				-- Add the new PE_CUSTOM_ATTRIBUTE_TABLE_ENTRY instance to the metadata tables.
-			pe_index := add_table_entry (l_ca_entry)
+			pe_index := next_table_index (l_ca_entry.table_index)
+			Result := add_table_entry (l_ca_entry).to_integer_32
 
-				-- Return the generated token.
-			Result := last_token.to_integer_32
 			debug ("il_emitter_table")
 				print ({STRING_32} " -> ("+ pe_index.out +") index=" + pe_index.out + " token=" + Result.to_hex_string +"%N")
 			end
@@ -1468,5 +1427,17 @@ feature {NONE} -- Access
 
 	assembly_emitter: MD_ASSEMBLY_EMIT
 			-- Interface that knows how to define assemblies
+		do
+			Result := internal_assembly_emitter
+			if Result = Void then
+				create Result.make (Current)
+				internal_assembly_emitter := Result
+			end
+		end
+
+	internal_assembly_emitter: detachable like assembly_emitter
+			-- Cached value for `assembly_emitter`.
+
+invariant
 
 end

@@ -46,7 +46,7 @@ feature -- Initialization
 			until
 				i > l_upper
 			loop
-				if is_table_included (i.to_natural_32, bin) then
+				if is_table_included (i.to_natural_8, bin) then
 					l_tb_counts[i] := pe.read_natural_32_item ("Size").value
 				end
 				i := i + 1
@@ -58,10 +58,10 @@ feature -- Initialization
 			until
 				i > l_upper or last_read_table_error
 			loop
-				if is_table_included (i.to_natural_32, bin) then
-					s := table_name (i.to_natural_32)
+				if is_table_included (i.to_natural_8, bin) then
+					s := table_name (i.to_natural_8)
 					n32 := l_tb_counts [i]
-					tables[i] := read_table (Current, pe, i.to_natural_32, n32)
+					tables[i] := read_table (Current, pe, i.to_natural_8, n32)
 				end
 				i := i + 1
 			end
@@ -81,9 +81,79 @@ feature -- Item
 			end
 		end
 
+	typespec_table: detachable PE_MD_TABLE_TYPESPEC
+		do
+			if attached {like typespec_table} item ({PE_TABLES}.ttypespec) as tb then
+				Result := tb
+			end
+		end
+
+	typeref_table: detachable PE_MD_TABLE_TYPEREF
+		do
+			if attached {like typeref_table} item ({PE_TABLES}.ttyperef) as tb then
+				Result := tb
+			end
+		end
+
 	methoddef_table: detachable PE_MD_TABLE_METHODDEF
 		do
 			if attached {like methoddef_table} item ({PE_TABLES}.tmethoddef) as tb then
+				Result := tb
+			end
+		end
+
+	methodspec_table: detachable PE_MD_TABLE_METHODSPEC
+		do
+			if attached {like methodspec_table} item ({PE_TABLES}.tmethodspec) as tb then
+				Result := tb
+			end
+		end
+
+	member_ref_table: detachable PE_MD_TABLE_MEMBERREF
+		do
+			if attached {like member_ref_table} item ({PE_TABLES}.tmemberref) as tb then
+				Result := tb
+			end
+		end
+
+	field_table: detachable PE_MD_TABLE_FIELD
+		do
+			if attached {like field_table} item ({PE_TABLES}.tfield) as tb then
+				Result := tb
+			end
+		end
+
+	property_table: detachable PE_MD_TABLE_PROPERTY
+		do
+			if attached {like property_table} item ({PE_TABLES}.tproperty) as tb then
+				Result := tb
+			end
+		end
+
+	param_table: detachable PE_MD_TABLE_PARAM
+		do
+			if attached {like param_table} item ({PE_TABLES}.tparam) as tb then
+				Result := tb
+			end
+		end
+
+	event_table: detachable PE_MD_TABLE_EVENT
+		do
+			if attached {like event_table} item ({PE_TABLES}.tevent) as tb then
+				Result := tb
+			end
+		end
+
+	interfaceimpl_table: detachable PE_MD_TABLE_INTERFACEIMPL
+		do
+			if attached {like interfaceimpl_table} item ({PE_TABLES}.tinterfaceimpl) as tb then
+				Result := tb
+			end
+		end
+
+	propertymap_table: detachable PE_MD_TABLE_PROPERTYMAP
+		do
+			if attached {like propertymap_table} item ({PE_TABLES}.tpropertymap) as tb then
 				Result := tb
 			end
 		end
@@ -108,22 +178,22 @@ feature -- Access
 
 feature -- Helpers
 
-	max_table_id: NATURAL_32
+	max_table_id: NATURAL_8
 		do
 			Result := {PE_TABLES}.tGenericParamConstraint
 		end
 
-	is_table_included (tb: NATURAL_32; bin: STRING_8): BOOLEAN
+	is_table_included (tb: NATURAL_8; bin: STRING_8): BOOLEAN
 		do
 			Result := bin [bin.count - tb.to_integer_32] = '1'
 		end
 
-	table_size (tb: NATURAL_32): NATURAL_32
+	table_size (tb: NATURAL_8): NATURAL_32
 		do
 			Result := tables_counts [tb.to_integer_32]
 		end
 
-	table_name (tb: NATURAL_32): STRING
+	table_name (tb: NATURAL_8): STRING
 		do
 			inspect tb
 			when {PE_TABLES}.tModule then Result := "Module"
@@ -167,9 +237,11 @@ feature -- Helpers
 			else
 				Result := "#" + tb.to_natural_8.to_hex_string
 			end
+		ensure
+			class
 		end
 
-	read_table (a_tables: PE_MD_TABLES; pe: PE_FILE; tb: NATURAL_32; nb: NATURAL_32): detachable PE_MD_TABLE [PE_MD_TABLE_ENTRY]
+	read_table (a_tables: PE_MD_TABLES; pe: PE_FILE; tb: NATURAL_8; nb: NATURAL_32): detachable PE_MD_TABLE [PE_MD_TABLE_ENTRY]
 		do
 			if last_read_table_error then
 				create {PE_MD_TABLE_ERROR} Result.make (a_tables, pe, tb, nb)

@@ -50,7 +50,7 @@ feature -- Visitor
 
 	tables_count: detachable HASH_TABLE [NATURAL_32, NATURAL_32]
 
-	table_count (tb_id: NATURAL_32): NATURAL_32
+	table_count (tb_id: NATURAL_8): NATURAL_32
 		do
 			if attached tables_count as ht then
 				Result := ht [tb_id]
@@ -62,6 +62,7 @@ feature -- Visitor
 			l_count: NATURAL_32
 			ht: like tables_count
 		do
+
 				-- Record table counts
 			create ht.make (o.tables.count)
 			tables_count := ht
@@ -128,12 +129,11 @@ feature -- Visitor
 						prev.update_index (0)
 						l_updated := True
 					end
-					if
-						attached {PE_INDEX_ITEM_WITH_TABLE} idx as idx_with_table and then
-						idx.index = table_count (idx_with_table.associated_table_id) + 1
-					then
-						idx.update_index (0)
-						l_updated := True
+					if attached {PE_INDEX_ITEM_WITH_TABLE} idx as idx_with_table then
+						if idx.index = table_count (idx_with_table.associated_table_id) + 1 then
+							idx.update_index (0)
+							l_updated := True
+						end
 					end
 					prev := idx
 				else
@@ -198,18 +198,72 @@ feature -- Visitor
 			elseif attached {PE_TYPE_SPEC_INDEX_ITEM} o as tspec_index then
 				visit_type_spec_index_item (tspec_index)
 
+			elseif attached {PE_MODULE_INDEX_ITEM} o as tmod_index then
+				visit_module_index_item (tmod_index)
+			elseif attached {PE_MODULE_REF_INDEX_ITEM} o as tmodref_index then
+				visit_moduleref_index_item (tmodref_index)
+
+			elseif attached {PE_ASSEMBLY_INDEX_ITEM} o as tass_index then
+				visit_assembly_index_item (tass_index)
+			elseif attached {PE_ASSEMBLY_REF_INDEX_ITEM} o as tassref_index then
+				visit_assemblyref_index_item (tassref_index)
+
 			elseif attached {PE_STRING_INDEX_ITEM} o as tstring_index then
 				visit_string_index_item (tstring_index)
-			else
 
+			elseif attached {PE_BLOB_INDEX_ITEM} o as tblob_index then
+				visit_blob_index_item (tblob_index)
+
+			elseif attached {PE_GUID_INDEX_ITEM} o as tguid_index then
+				visit_guid_index_item (tguid_index)
+
+			elseif attached {PE_GUID_ITEM} o as tguid then
+				visit_guid_item (tguid)
+
+			elseif attached {PE_RVA_ITEM} o as trva then
+				visit_rva_item (trva)
+
+			elseif attached {PE_ATTRIBUTES_ITEM} o as tattrs then
+					-- Warning: this is a common ancestor
+				visit_attributes_item (tattrs)
+
+			else
+				-- TODO
+				visit_unhandled_item (o)
 			end
 			Precursor (o)
+		end
+
+	visit_unhandled_item (o: PE_ITEM)
+		do
+			-- CHECK
+			if
+				attached {PE_NATURAL_16_ITEM} o
+				or attached {PE_NATURAL_32_ITEM} o
+				or attached {PE_INTEGER_16_ITEM} o
+				or attached {PE_INTEGER_32_ITEM} o
+			then
+					-- TODO: check validity
+			else
+				do_nothing
+			end
+		end
+
+	visit_attributes_item (o: PE_ATTRIBUTES_ITEM)
+		do
+			-- TODO
+		end
+
+	visit_rva_item (o: PE_RVA_ITEM)
+		do
+			-- TODO: check if the RVA value is in expected zone.
 		end
 
 	visit_method_def_index_item (idx: PE_METHOD_DEF_INDEX_ITEM)
 		do
 			if
-				idx.index > 0 and then idx.index /= table_count ({PE_TABLES}.tmethoddef) + 1
+				not idx.is_null_index and then
+				idx.index /= table_count ({PE_TABLES}.tmethoddef) + 1
 			then
 				if attached pe_file.method_def (idx) as m then
 					if
@@ -229,7 +283,7 @@ feature -- Visitor
 	visit_member_ref_index_item (idx: PE_MEMBER_REF_INDEX_ITEM)
 		do
 			if
-				idx.index > 0 and then idx.index /= table_count ({PE_TABLES}.tmemberref) + 1
+				not idx.is_null_index and then idx.index /= table_count ({PE_TABLES}.tmemberref) + 1
 			then
 				if attached pe_file.member_ref (idx) as m then
 					if
@@ -249,7 +303,8 @@ feature -- Visitor
 	visit_field_index_item (idx: PE_FIELD_INDEX_ITEM)
 		do
 			if
-				idx.index > 0 and then idx.index /= table_count ({PE_TABLES}.tfield) + 1
+				not idx.is_null_index and then
+				idx.index /= table_count ({PE_TABLES}.tfield) + 1
 			then
 				if attached pe_file.field (idx) as f then
 					if
@@ -269,7 +324,7 @@ feature -- Visitor
 	visit_param_index_item (idx: PE_PARAM_INDEX_ITEM)
 		do
 			if
-				idx.index > 0 and then idx.index /= table_count ({PE_TABLES}.tparam) + 1
+				not idx.is_null_index and then idx.index /= table_count ({PE_TABLES}.tparam) + 1
 			then
 				if attached pe_file.param (idx) as p then
 					if
@@ -309,7 +364,7 @@ feature -- Visitor
 	visit_property_index_item (idx: PE_PROPERTY_INDEX_ITEM)
 		do
 			if
-				idx.index > 0 and then idx.index /= table_count ({PE_TABLES}.tproperty) + 1
+				not idx.is_null_index and then idx.index /= table_count ({PE_TABLES}.tproperty) + 1
 			then
 				if attached pe_file.param (idx) as prp then
 					if
@@ -329,7 +384,7 @@ feature -- Visitor
 	visit_type_def_index_item (idx: PE_TYPE_DEF_INDEX_ITEM)
 		do
 			if
-				idx.index > 0 -- and then idx.index /= table_count ({PE_TABLES}.ttypedef) + 1
+				not idx.is_null_index -- and then idx.index /= table_count ({PE_TABLES}.ttypedef) + 1
 			then
 				if attached pe_file.type_def (idx) as tdef then
 					if
@@ -356,7 +411,7 @@ feature -- Visitor
 	visit_type_ref_index_item (idx: PE_TYPE_REF_INDEX_ITEM)
 		do
 			if
-				idx.index > 0 -- and then idx.index /= table_count ({PE_TABLES}.ttyperef) + 1
+				not idx.is_null_index -- and then idx.index /= table_count ({PE_TABLES}.ttyperef) + 1
 			then
 				if attached pe_file.type_ref (idx) as tref then
 					if
@@ -376,9 +431,61 @@ feature -- Visitor
 	visit_type_spec_index_item (idx: PE_TYPE_SPEC_INDEX_ITEM)
 		do
 			if
-				idx.index > 0  -- and then idx.index /= table_count ({PE_TABLES}.ttypespec) + 1
+				not idx.is_null_index  -- and then idx.index /= table_count ({PE_TABLES}.ttypespec) + 1
 			then
 				if attached pe_file.type_spec (idx) as tspec then
+					-- Found
+				else
+					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
+				end
+			end
+		end
+
+	visit_module_index_item (idx: PE_MODULE_INDEX_ITEM)
+		do
+			if
+				not idx.is_null_index  -- and then idx.index /= table_count ({PE_TABLES}.ttypespec) + 1
+			then
+				if attached pe_file.module (idx) as t then
+					-- Found
+				else
+					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
+				end
+			end
+		end
+
+	visit_moduleref_index_item (idx: PE_MODULE_REF_INDEX_ITEM)
+		do
+			if
+				not idx.is_null_index  -- and then idx.index /= table_count ({PE_TABLES}.ttypespec) + 1
+			then
+				if attached pe_file.moduleref (idx) as t then
+					-- Found
+				else
+					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
+				end
+			end
+		end
+
+	visit_assembly_index_item (idx: PE_ASSEMBLY_INDEX_ITEM)
+		do
+			if
+				not idx.is_null_index  -- and then idx.index /= table_count ({PE_TABLES}.ttypespec) + 1
+			then
+				if attached pe_file.assembly (idx) as t then
+					-- Found
+				else
+					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
+				end
+			end
+		end
+
+	visit_assemblyref_index_item (idx: PE_ASSEMBLY_REF_INDEX_ITEM)
+		do
+			if
+				not idx.is_null_index  -- and then idx.index /= table_count ({PE_TABLES}.ttypespec) + 1
+			then
+				if attached pe_file.assemblyref (idx) as t then
 					-- Found
 				else
 					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
@@ -389,7 +496,7 @@ feature -- Visitor
 	visit_string_index_item (idx: PE_STRING_INDEX_ITEM)
 		do
 			if
-				idx.index > 0
+				not idx.is_null_index
 			then
 				if attached pe_file.string_heap_item (idx) as str then
 					idx.set_info (create {PE_ITEM_INFO}.make (str))
@@ -397,6 +504,49 @@ feature -- Visitor
 					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
 				end
 			end
+		end
+
+	visit_blob_index_item (idx: PE_BLOB_INDEX_ITEM)
+		do
+			if attached {PE_SIGNATURE_BLOB_INDEX} idx.associated_structure then
+				if
+					idx.index > 0
+				then
+					if attached pe_file.signature_blob_heap_item (idx) as sig then
+						idx.set_info (create {PE_ITEM_INFO}.make (sig.to_string))
+					else
+						idx.report_error (create {PE_INDEX_ERROR}.make (idx))
+					end
+				end
+			else
+				if
+					idx.index > 0
+				then
+					if attached pe_file.blob_heap_item (idx) as blb then
+						idx.set_info (create {PE_ITEM_INFO}.make (blb.dump))
+					else
+						idx.report_error (create {PE_INDEX_ERROR}.make (idx))
+					end
+				end
+			end
+		end
+
+	visit_guid_index_item (idx: PE_GUID_INDEX_ITEM)
+		do
+			if
+				not idx.is_null_index
+			then
+				if attached pe_file.guid_heap_item (idx) as g then
+					idx.set_info (create {PE_ITEM_INFO}.make (g.to_string))
+				else
+					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
+				end
+			end
+		end
+
+	visit_guid_item (i: PE_GUID_ITEM)
+		do
+			do_nothing
 		end
 
 end

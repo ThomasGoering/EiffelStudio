@@ -12,8 +12,12 @@ class
 inherit
 	PE_INTEGER_32_ITEM
 		redefine
-			to_string,
 			make_from_item
+		end
+
+	PE_ATTRIBUTES_ITEM
+		rename
+			has_flag_32 as has_flag
 		end
 
 create
@@ -36,41 +40,38 @@ feature -- Status report
 	to_flags_string: STRING_8
 		local
 			v: NATURAL_32
-			t: NATURAL_32
 		do
 			create Result.make (0)
+			v := value.to_natural_32
 
-			t := v & VisibilityMask
-			if (t & NotPublic) = NotPublic then
-				Result.append ("NotPublic ")
-			end
-			if (t & Public) = Public then
-				Result.append ("Public ")
+			if has_flag (VisibilityMask, Public,	v) then add_flag_to ("Public", Result) else
+				if has_flag (VisibilityMask, NotPublic,	v) then add_flag_to ("NotPublic", Result) end
 			end
 
-			t := v & ClassSemanticsMask
-			if (t & Class_) = Class_ then
-				Result.append ("Class ")
-			end
-			if (t & Interface) = Interface then
-				Result.append ("Interface ")
-			end
+			if has_flag (LayoutMask, AutoLayout,	v) then add_flag_to ("auto", Result) end
 
-			t := v
-			if (t & Abstract) = Abstract then
-				Result.append ("Abstract ")
-			end
-			if (t & Sealed) = Sealed then
-				Result.append ("Sealed ")
-			end
-			if (t & SpecialName) = SpecialName then
-				Result.append ("SpecialName ")
-			end
+			if has_flag (ClassSemanticsMask, Class_,	v) then add_flag_to ("Class", Result) end
+			if has_flag (ClassSemanticsMask, Interface,	v) then add_flag_to ("Interface", Result) end
+
+			if has_flag (0x0, Abstract,	v) then add_flag_to ("Abstract", Result) end
+			if has_flag (0x0, Sealed,	v) then add_flag_to ("Sealed", Result) end
+			if has_flag (0x0, SpecialName,	v) then add_flag_to ("SpecialName", Result) end
+
+			if has_flag (StringFormatMask, AnsiClass,	v) then add_flag_to ("ansi", Result) end
+
+			if has_flag (0x0, BeforeFieldInit,	v) then add_flag_to ("BeforeFieldInit", Result) end
 		end
 
-	to_string: STRING_32
+--	to_string: STRING_32
+--		do
+--			Result := to_flags_string + Precursor
+--		end
+
+feature -- Status report
+
+	is_nested_private: BOOLEAN
 		do
-			Result := to_flags_string + Precursor
+			Result := ((value.to_natural_32 & VisibilityMask) & NestedPrivate) = NestedPrivate
 		end
 
 feature -- Visbility attributes

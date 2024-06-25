@@ -10,6 +10,8 @@ deferred class
 inherit
 	PE_VISITABLE
 
+	DEBUG_OUTPUT
+
 feature {NONE} -- Initialization
 
 	make (pe: PE_FILE)
@@ -23,7 +25,7 @@ feature {NONE} -- Initialization
 
 feature -- Access
 
-	table_id: NATURAL_32
+	table_id: NATURAL_8
 		deferred
 		ensure
 			{PE_TABLES}.valid (Result)
@@ -32,6 +34,29 @@ feature -- Access
 	description: STRING_8
 		do
 			Result := "No Information"
+		end
+
+	description_as_array: ARRAY [READABLE_STRING_GENERAL]
+		do
+			Result := <<"No Information">>
+		end
+
+	token: NATURAL_32
+
+feature -- Status report
+
+	has_token: BOOLEAN = True
+
+	debug_output: STRING
+		do
+			Result := token.to_hex_string + " {"+ {PE_MD_TABLES}.table_name (table_id) +"}"
+		end
+
+feature -- Conversion	
+
+	to_string_array: ARRAY [like to_string]
+		do
+			Result := <<to_string>>
 		end
 
 	to_string: STRING_32
@@ -43,6 +68,8 @@ feature -- Access
 		do
 			Result := ""
 		end
+
+feature -- Errors		
 
 	has_error: BOOLEAN
 		do
@@ -64,6 +91,13 @@ feature -- Access
 --			e.set_description ("Not Implemented")
 --			e.raise
 			{EXCEPTIONS}.raise ("["+ generator +"] NotImplemented")
+		end
+
+feature -- Element change
+
+	set_token (tok: like token)
+		do
+			token := tok
 		end
 
 feature -- Visit

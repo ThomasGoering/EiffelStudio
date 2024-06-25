@@ -17,12 +17,11 @@ feature {NONE} -- Initialization
 			structure := struct
 			struct.add_method_def_or_member_ref_index ("Method")
 			struct.add_blob_index ("Instantiation")
-
 		end
 
 feature -- Access
 
-	table_id: NATURAL_32
+	table_id: NATURAL_8
 		once
 			Result := {PE_TABLES}.tmethodspec
 		end

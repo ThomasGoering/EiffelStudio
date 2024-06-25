@@ -7,7 +7,7 @@ class
 	MD_ASSEMBLY_EMIT
 
 inherit
-	MD_EMIT_SHARED
+	MD_EMIT_BRIDGE
 
 	REFACTORING_HELPER
 		export {NONE} all end
@@ -17,22 +17,14 @@ create
 
 feature {NONE} -- Initialization
 
-	make (a_tables: SPECIAL [MD_TABLE]; a_writer: PE_GENERATOR)
+	make (a_md_emit: MD_EMIT)
 		do
-			-- TODO: maybe use as parameter the instance of MD_EMIT
-			tables := a_tables
-			pe_writer := a_writer
+			md_emit := a_md_emit
 		end
 
-feature -- Access
+feature {NONE} -- Access
 
-	tables: SPECIAL [MD_TABLE]
-			--  in-memory metadata tables
-
-	--pe_writer: PE_WRITER
-	pe_writer: PE_GENERATOR
-			-- helper class to generate the PE file.
-			--| using as a helper class to access needed features.
+	md_emit: MD_EMIT
 
 feature -- Access
 
@@ -69,8 +61,7 @@ feature -- Access
 			create l_assembly_ref_entry.make_with_data ({PE_ASSEMBLY_FLAGS}.PA_none, l_major_version, l_minor_version, l_build_number, l_revision_number, l_name_index, l_public_key_or_token_index)
 
 				-- Add the new PE_ASSEMBLY_REF_TABLE_ENTRY instance to the metadata tables.
-			pe_index := add_table_entry (l_assembly_ref_entry)
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_assembly_ref_entry).to_integer_32
 		ensure
 			valid_result: Result > 0
 		end
@@ -115,8 +106,7 @@ feature -- Definition
 				assembly_info.revision_number,
 				l_name_index,
 				l_public_key_or_token)
-			pe_index := add_table_entry (l_assembly_def_entry)
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_assembly_def_entry).to_integer_32
 		ensure
 			valid_result: Result > 0
 		end
@@ -161,11 +151,9 @@ feature -- Definition
 			l_implementation := create_implementation (implementation_token, l_tuple_type.table_row_index)
 
 				-- Create a new PE_EXPORTED_TYPE_TABLE_ENTRY instance with the given data
-			create l_exported_type_entry.make_with_data (type_flags.to_natural_32, l_tuple_type_def.table_type_index, l_name_index, l_namespace_index, l_implementation)
+			create l_exported_type_entry.make_with_data (type_flags.to_natural_32, l_tuple_type_def.table_row_index, l_name_index, l_namespace_index, l_implementation)
 
-			pe_index := add_table_entry (l_exported_type_entry)
-
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_exported_type_entry).to_integer_32
 		ensure
 			valid_result: Result > 0
 		end
@@ -208,8 +196,7 @@ feature -- Definition
 			l_flags := file_flags.to_natural_32
 			create l_file_entry.make_with_data (l_flags, l_name_index, l_hash_value_index)
 
-			pe_index := add_table_entry (l_file_entry)
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_file_entry).to_integer_32
 		ensure
 			valid_result: Result > 0
 		end
@@ -237,9 +224,7 @@ feature -- Definition
 				-- Create a new PE_MANIFEST_RESOURCE_TABLE_ENTRY instance with the given data
 			create l_manifest_resource_entry.make_with_data (offset.to_natural_32, resource_flags.to_natural_32, l_name_index, l_implementation)
 
-			pe_index := add_table_entry (l_manifest_resource_entry)
-
-			Result := last_token.to_integer_32
+			Result := add_table_entry (l_manifest_resource_entry).to_integer_32
 		ensure
 			valid_result: Result > 0
 		end

@@ -15,12 +15,12 @@ feature {NONE} -- Initialization
 		do
 			create struct.make (1, "StandAloneSig")
 			structure := struct
-			struct.add_signature_blob_index ("Signature")
+			struct.add_method_or_locals_signature_blob_index ("Signature")
 		end
 
 feature -- Access
 
-	table_id: NATURAL_32
+	table_id: NATURAL_8
 		once
 			Result := {PE_TABLES}.tstandalonesig
 		end

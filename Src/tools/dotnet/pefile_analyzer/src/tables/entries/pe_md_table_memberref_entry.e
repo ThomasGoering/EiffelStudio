@@ -15,12 +15,12 @@ feature -- Access
 		do
 			create struct.make (3, "MemberRef")
 			structure := struct
-			struct.add_index ("Class")
+			struct.add_memberref_parent_index ("Class")
 				--Class (an index into the MethodDef, ModuleRef,TypeDef, TypeRef, or TypeSpec
 				--tables; more precisely, a MemberRefParent (§II.24.2.6) coded index
 
 			struct.add_string_index ("Name")
-			struct.add_signature_blob_index ("Signature")
+			struct.add_field_or_method_signature_blob_index ("Signature")
 		end
 
 feature -- Access
@@ -32,7 +32,7 @@ feature -- Access
 
 feature -- Access
 
-	table_id: NATURAL_32
+	table_id: NATURAL_8
 		once
 			Result := {PE_TABLES}.tmemberref
 		end

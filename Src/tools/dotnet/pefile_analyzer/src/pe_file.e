@@ -151,235 +151,241 @@ feature -- Metadata
 			end
 		end
 
-	type_def_or_ref_or_spec (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_ENTRY
-		local
-			tb_id: NATURAL_32
-			i: NATURAL_32
+	interface_impl_list_for (a_class_token: NATURAL_32): detachable LIST [PE_INDEX_ITEM]
 		do
-			tb_id := {PE_TABLES}.ttypedef
-			i := idx.index
-			if
-				attached {PE_MD_TABLE_TYPEDEF} metadata_tables [tb_id] as tb and then
-				tb.valid_index (i)
-			then
-				Result := tb [i]
+			if attached metadata_tables.interfaceimpl_table as tb then
+				Result := tb.interfaces (a_class_token)
+				if Result.is_empty then
+					Result := Void
+				end
+			end
+		end
+
+	propertymap_list_for (a_class_token: NATURAL_32): detachable LIST [PE_MD_TABLE_PROPERTYMAP_ENTRY]
+		do
+			if attached metadata_tables.propertymap_table as tb then
+				Result := tb.propertymap_list_for_type_def (a_class_token)
+				if Result.is_empty then
+					Result := Void
+				end
 			end
 		end
 
 	type_def (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_TYPEDEF_ENTRY
-		local
-			tb_id: NATURAL_32
-			i: NATURAL_32
 		do
-			tb_id := {PE_TABLES}.ttypedef
-			i := idx.index
 			if
-				attached {PE_MD_TABLE_TYPEDEF} metadata_tables [tb_id] as tb and then
-				tb.valid_index (i)
+				attached metadata_tables.typedef_table as tb and then
+				tb.valid_index (idx.index)
 			then
-				Result := tb [i]
+				Result := tb [idx.index]
 			end
 		end
 
 	type_ref (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_TYPEREF_ENTRY
-		local
-			tb_id: NATURAL_32
-			i: NATURAL_32
 		do
-			tb_id := {PE_TABLES}.ttyperef
-			i := idx.index
 			if
-				attached {PE_MD_TABLE_TYPEREF} metadata_tables [tb_id] as tb and then
-				tb.valid_index (i)
+				attached metadata_tables.typeref_table as tb and then
+				tb.valid_index (idx.index)
 			then
-				Result := tb [i]
+				Result := tb [idx.index]
 			end
 		end
 
 	type_spec (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_TYPESPEC_ENTRY
-		local
-			tb_id: NATURAL_32
-			i: NATURAL_32
 		do
-			tb_id := {PE_TABLES}.ttypespec
-			i := idx.index
 			if
-				attached {PE_MD_TABLE_TYPESPEC} metadata_tables [tb_id] as tb and then
-				tb.valid_index (i)
+				attached metadata_tables.typespec_table as tb and then
+				tb.valid_index (idx.index)
 			then
-				Result := tb [i]
+				Result := tb [idx.index]
+			end
+		end
+
+	module (idx: PE_MODULE_INDEX_ITEM): detachable PE_MD_TABLE_MODULE_ENTRY
+		do
+			if
+				attached {PE_MD_TABLE_MODULE} metadata_tables [{PE_TABLES}.tmodule] as tb and then
+				tb.valid_index (idx.index)
+			then
+				Result := tb [idx.index]
+			end
+		end
+
+	moduleref (idx: PE_MODULE_REF_INDEX_ITEM): detachable PE_MD_TABLE_MODULEREF_ENTRY
+		do
+			if
+				attached {PE_MD_TABLE_MODULEREF} metadata_tables [{PE_TABLES}.tmoduleref] as tb and then
+				tb.valid_index (idx.index)
+			then
+				Result := tb [idx.index]
+			end
+		end
+
+	assembly (idx: PE_ASSEMBLY_INDEX_ITEM): detachable PE_MD_TABLE_ASSEMBLYDEF_ENTRY
+		do
+			if
+				attached {PE_MD_TABLE_ASSEMBLYDEF} metadata_tables [{PE_TABLES}.tassemblydef] as tb and then
+				tb.valid_index (idx.index)
+			then
+				Result := tb [idx.index]
+			end
+		end
+
+	assemblyref (idx: PE_ASSEMBLY_REF_INDEX_ITEM): detachable PE_MD_TABLE_ASSEMBLYREF_ENTRY
+		do
+			if
+				attached {PE_MD_TABLE_ASSEMBLYREF} metadata_tables [{PE_TABLES}.tassemblyref] as tb and then
+				tb.valid_index (idx.index)
+			then
+				Result := tb [idx.index]
 			end
 		end
 
 	method_def (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_METHODDEF_ENTRY
-		local
-			tb_id: NATURAL_32
-			i: NATURAL_32
 		do
-			tb_id := {PE_TABLES}.tmethoddef
-			i := idx.index
 			if
-				attached {PE_MD_TABLE_METHODDEF} metadata_tables [tb_id] as tb and then
-				tb.valid_index (i)
+				attached metadata_tables.methoddef_table as tb and then
+				tb.valid_index (idx.index)
 			then
-				Result := tb [i]
+				Result := tb [idx.index]
+			end
+		end
+
+	methodpointer (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_METHODPOINTER_ENTRY
+		do
+			if
+				attached {PE_MD_TABLE_METHODPOINTER} metadata_tables[{PE_TABLES}.tmethodpointer] as tb and then
+				tb.valid_index (idx.index)
+			then
+				Result := tb [idx.index]
 			end
 		end
 
 	method_spec (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_METHODSPEC_ENTRY
-		local
-			tb_id: NATURAL_32
-			i: NATURAL_32
 		do
-			tb_id := {PE_TABLES}.tmethodspec
-			i := idx.index
 			if
-				attached {PE_MD_TABLE_METHODSPEC} metadata_tables [tb_id] as tb and then
-				tb.valid_index (i)
+				attached metadata_tables.methodspec_table as tb and then
+				tb.valid_index (idx.index)
 			then
-				Result := tb [i]
+				Result := tb [idx.index]
 			end
 		end
 
 	member_ref (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_MEMBERREF_ENTRY
-		local
-			tb_id: NATURAL_32
-			i: NATURAL_32
 		do
-			tb_id := {PE_TABLES}.tmemberref
-			i := idx.index
 			if
-				attached {PE_MD_TABLE_MEMBERREF} metadata_tables [tb_id] as tb and then
-				tb.valid_index (i)
+				attached metadata_tables.member_ref_table as tb and then
+				tb.valid_index (idx.index)
 			then
-				Result := tb [i]
+				Result := tb [idx.index]
 			end
 		end
 
 	field (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_FIELD_ENTRY
-		local
-			tb_id: NATURAL_32
-			i: NATURAL_32
 		do
-			tb_id := {PE_TABLES}.tfield
-			i := idx.index
 			if
-				attached {PE_MD_TABLE_FIELD} metadata_tables [tb_id] as tb and then
-				tb.valid_index (i)
+				attached metadata_tables.field_table as tb and then
+				tb.valid_index (idx.index)
 			then
-				Result := tb [i]
+				Result := tb [idx.index]
 			end
 		end
 
-	fields (idx: PE_INDEX_ITEM; nb: NATURAL_32): ARRAYED_LIST [PE_MD_TABLE_FIELD_ENTRY]
-		local
-			tb_id: NATURAL_32
-			i, n: NATURAL_32
+	fieldpointer (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_FIELDPOINTER_ENTRY
 		do
-			create Result.make (nb.to_integer_32)
-			tb_id := {PE_TABLES}.tfield
-			if attached {PE_MD_TABLE_FIELD} metadata_tables [tb_id] as tb then
-				from
-					n := nb
-					i := idx.index
-				until
-					n = 0
-				loop
-					if tb.valid_index (i) and then attached tb [i] as item then
-						Result.force (item)
-					end
-					i := i + 1
-					n := n - 1
-				end
+			if
+				attached {PE_MD_TABLE_FIELDPOINTER} metadata_tables[{PE_TABLES}.tfieldpointer] as tb and then
+				tb.valid_index (idx.index)
+			then
+				Result := tb [idx.index]
 			end
-		ensure
-			Result.count = nb.to_integer_32
 		end
 
-	methods (idx: PE_INDEX_ITEM; nb: NATURAL_32): ARRAYED_LIST [PE_MD_TABLE_METHODDEF_ENTRY]
-		local
-			tb_id: NATURAL_32
-			i, n: NATURAL_32
+	fields (idx: PE_INDEX_ITEM; nb: NATURAL_32): detachable LIST [PE_MD_TABLE_FIELD_ENTRY]
 		do
-			create Result.make (nb.to_integer_32)
-			tb_id := {PE_TABLES}.tmethoddef
-			if attached {PE_MD_TABLE_METHODDEF} metadata_tables [tb_id] as tb then
-				from
-					n := nb
-					i := idx.index
-				until
-					n = 0
-				loop
-					if tb.valid_index (i) and then attached tb [i] as item then
-						Result.force (item)
-					end
-					i := i + 1
-					n := n - 1
-				end
+			if attached metadata_tables.field_table as tb then
+				Result := tb.entry_list (idx, nb)
 			end
 		ensure
-			Result.count = nb.to_integer_32
+			Result = Void or else Result.count = nb.to_integer_32
 		end
 
-	params (idx: PE_INDEX_ITEM; nb: NATURAL_32): ARRAYED_LIST [PE_MD_TABLE_PARAM_ENTRY]
-		local
-			tb_id: NATURAL_32
-			i, n: NATURAL_32
+	properties (idx: PE_INDEX_ITEM; nb: NATURAL_32): detachable LIST [PE_MD_TABLE_PROPERTY_ENTRY]
 		do
-			create Result.make (nb.to_integer_32)
-			tb_id := {PE_TABLES}.tparam
-			if attached {PE_MD_TABLE_PARAM} metadata_tables [tb_id] as tb then
-				from
-					n := nb
-					i := idx.index
-				until
-					n = 0
-				loop
-					if tb.valid_index (i) and then attached tb [i] as item then
-						Result.force (item)
-					end
-					i := i + 1
-					n := n - 1
-				end
+			if attached metadata_tables.property_table as tb then
+				Result := tb.entry_list (idx, nb)
 			end
 		ensure
-			Result.count = nb.to_integer_32
+			Result = Void or else Result.count = nb.to_integer_32
+		end
+
+	methods (idx: PE_INDEX_ITEM; nb: NATURAL_32): detachable LIST [PE_MD_TABLE_METHODDEF_ENTRY]
+		do
+			if attached metadata_tables.methoddef_table as tb then
+				Result := tb.entry_list (idx, nb)
+			end
+		ensure
+			Result = Void or else Result.count = nb.to_integer_32
+		end
+
+	params (idx: PE_INDEX_ITEM; nb: NATURAL_32): detachable LIST [PE_MD_TABLE_PARAM_ENTRY]
+		do
+			if attached metadata_tables.param_table as tb then
+				Result := tb.entry_list (idx, nb)
+			end
+		ensure
+			Result = Void or else Result.count = nb.to_integer_32
 		end
 
 	param (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_PARAM_ENTRY
-		local
-			tb_id: NATURAL_32
-			i: NATURAL_32
 		do
-			tb_id := {PE_TABLES}.tparam
-			i := idx.index
 			if
-				attached {PE_MD_TABLE_PARAM} metadata_tables [tb_id] as tb and then
-				tb.valid_index (i)
+				attached metadata_tables.param_table as tb and then
+				tb.valid_index (idx.index)
 			then
-				Result := tb [i]
+				Result := tb [idx.index]
 			end
 		end
 
 	event (idx: PE_INDEX_ITEM): detachable PE_MD_TABLE_EVENT_ENTRY
-		local
-			tb_id: NATURAL_32
-			i: NATURAL_32
 		do
-			tb_id := {PE_TABLES}.tevent
-			i := idx.index
 			if
-				attached {PE_MD_TABLE_EVENT} metadata_tables [tb_id] as tb and then
-				tb.valid_index (i)
+				attached metadata_tables.event_table as tb and then
+				tb.valid_index (idx.index)
 			then
-				Result := tb [i]
+				Result := tb [idx.index]
 			end
 		end
 
-	signature_blob_heap_item (idx: PE_INDEX_ITEM): detachable PE_SIGNATURE_BLOB_ITEM
+	signature_blob_heap_item (idx: PE_BLOB_INDEX_ITEM): detachable PE_SIGNATURE_BLOB_ITEM
 		do
 			if attached blob_heap_item (idx) as blob then
-				create Result.make_from_item (blob)
+				if attached {PE_SIGNATURE_BLOB_INDEX} idx.associated_structure as l_sign_idx then
+					if l_sign_idx.is_type_specification_signature then
+						create Result.make_type_specification_from_item (blob)
+					elseif l_sign_idx.is_method_signature then
+						create Result.make_method_from_item (blob)
+					elseif l_sign_idx.is_field_signature then
+						create Result.make_field_from_item (blob)
+					elseif l_sign_idx.is_locals_signature then
+						create Result.make_locals_from_item (blob)
+					elseif l_sign_idx.is_field_or_method_signature then
+						create Result.make_field_or_method_from_item (blob)
+					elseif l_sign_idx.is_method_or_locals_signature then
+						create Result.make_method_or_locals_from_item (blob)
+					elseif l_sign_idx.is_property_signature then
+						create Result.make_property_from_item (blob)
+					else
+							-- Default?
+						check known_signature: False end
+						create Result.make_type_specification_from_item (blob)
+					end
+				else
+						-- Default?
+						-- FIXME
+					check expected: False end
+					create Result.make_type_specification_from_item (blob)
+				end
 			end
 		end
 
@@ -422,6 +428,20 @@ feature -- Metadata
 				attached h [i] as str
 			then
 				Result := str.string_32
+			end
+		end
+
+	guid_heap_item (idx: PE_GUID_INDEX_ITEM): detachable PE_GUID_ITEM
+		local
+			i: NATURAL_32
+		do
+			i := idx.index
+			if
+				attached metadata_guid_heap as h and then
+				h.valid_index (i) and then
+				attached h [i] as g
+			then
+				Result := g
 			end
 		end
 
@@ -671,6 +691,15 @@ feature -- Read item
 			e := file.position.to_natural_32
 		end
 
+	read_rva_item (lab: like {PE_ITEM}.label): PE_RVA_ITEM
+		local
+			b,e: NATURAL_32
+		do
+			b := file.position.to_natural_32
+			create Result.make (b, read_bytes ({PLATFORM}.natural_32_bytes.to_natural_32), lab)
+			e := file.position.to_natural_32
+		end
+
 	read_natural_32_item (lab: like {PE_ITEM}.label): PE_NATURAL_32_ITEM
 		local
 			b,e: NATURAL_32
@@ -709,7 +738,7 @@ feature -- Read item
 
 feature -- PE MD reader
 
-	is_table_using_4_bytes (tb: NATURAL_32): BOOLEAN
+	is_table_using_4_bytes (tb: NATURAL_8): BOOLEAN
 		do
 			--TODO
 		end
@@ -757,9 +786,9 @@ feature -- PE MD reader
 			Result := is_table_using_4_bytes ({PE_TABLES}.ttypespec)
 		end
 
-	read_rva (lab: like {PE_ITEM}.label): PE_NATURAL_32_ITEM
+	read_rva (lab: like {PE_ITEM}.label): PE_RVA_ITEM
 		do
-			Result := read_natural_32_item (lab)
+			Result := read_rva_item (lab)
 		end
 
 	read_flags_16 (lab: like {PE_ITEM}.label): PE_INTEGER_16_ITEM
@@ -782,28 +811,28 @@ feature -- PE MD reader
 			e := file.position.to_natural_32
 		end
 
-	read_blob_index (lab: like {PE_ITEM}.label): PE_INDEX_ITEM
+	read_blob_index (lab: like {PE_ITEM}.label): PE_BLOB_INDEX_ITEM
 		local
 			b,e: NATURAL_32
 		do
 			b := file.position.to_natural_32
 			if is_blob_heap_using_4_bytes then
-				create {PE_INDEX_32_ITEM} Result.make (b, read_bytes ({PLATFORM}.natural_32_bytes.to_natural_32), lab)
+				create {PE_BLOB_INDEX_32_ITEM} Result.make (b, read_bytes ({PLATFORM}.natural_32_bytes.to_natural_32), lab)
 			else
-				create {PE_INDEX_16_ITEM} Result.make (b, read_bytes ({PLATFORM}.natural_16_bytes.to_natural_32), lab)
+				create {PE_BLOB_INDEX_16_ITEM} Result.make (b, read_bytes ({PLATFORM}.natural_16_bytes.to_natural_32), lab)
 			end
 			e := file.position.to_natural_32
 		end
 
-	read_guid_index (lab: like {PE_ITEM}.label): PE_INDEX_ITEM
+	read_guid_index (lab: like {PE_ITEM}.label): PE_GUID_INDEX_ITEM
 		local
 			b,e: NATURAL_32
 		do
 			b := file.position.to_natural_32
 			if is_guid_heap_using_4_bytes then
-				create {PE_INDEX_32_ITEM} Result.make (b, read_bytes ({PLATFORM}.natural_32_bytes.to_natural_32), lab)
+				create {PE_GUID_INDEX_32_ITEM} Result.make (b, read_bytes ({PLATFORM}.natural_32_bytes.to_natural_32), lab)
 			else
-				create {PE_INDEX_16_ITEM} Result.make (b, read_bytes ({PLATFORM}.natural_16_bytes.to_natural_32), lab)
+				create {PE_GUID_INDEX_16_ITEM} Result.make (b, read_bytes ({PLATFORM}.natural_16_bytes.to_natural_32), lab)
 			end
 			e := file.position.to_natural_32
 		end
@@ -875,6 +904,76 @@ feature -- PE MD reader
 						create {PE_TYPE_SPEC_INDEX_16_ITEM} Result.make (b, mp, lab)
 					end
 					Result.update_index (tu.index)
+				else
+					check False end
+					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
+					Result := idx
+				end
+			else
+				check False end
+				Result := idx
+			end
+			e := file.position.to_natural_32
+		end
+
+	read_memberref_parent_index (lab: like {PE_ITEM}.label; multi: PE_STRUCTURE_TAG_ITEM): PE_INDEX_ITEM
+		local
+			b,e: NATURAL_32
+			mp: MANAGED_POINTER
+			idx: PE_INDEX_ITEM
+		do
+			b := file.position.to_natural_32
+			if
+				is_type_def_table_using_4_bytes
+				or is_type_ref_table_using_4_bytes
+				or is_type_spec_table_using_4_bytes
+--				or is_ ...
+			then
+				mp := read_bytes ({PLATFORM}.natural_32_bytes.to_natural_32)
+				create {PE_INDEX_32_ITEM} idx.make (b, mp, lab)
+			else
+				mp := read_bytes ({PLATFORM}.natural_16_bytes.to_natural_32)
+				create {PE_INDEX_16_ITEM} idx.make (b, mp, lab)
+			end
+			if attached multi.tag_and_index (idx) as tu then
+				inspect tu.table
+				when {PE_MEMBER_REF_PARENT_INDEX}.typedef then
+					if is_type_def_table_using_4_bytes then
+						create {PE_TYPE_DEF_INDEX_32_ITEM} Result.make (b, mp, lab)
+					else
+						create {PE_TYPE_DEF_INDEX_16_ITEM} Result.make (b, mp, lab)
+					end
+					Result.update_index (tu.index)
+				when {PE_MEMBER_REF_PARENT_INDEX}.typeref then
+					if is_type_ref_table_using_4_bytes then
+						create {PE_TYPE_REF_INDEX_32_ITEM} Result.make (b, mp, lab)
+					else
+						create {PE_TYPE_REF_INDEX_16_ITEM} Result.make (b, mp, lab)
+					end
+					Result.update_index (tu.index)
+				when {PE_MEMBER_REF_PARENT_INDEX}.typespec then
+					if is_type_spec_table_using_4_bytes then
+						create {PE_TYPE_SPEC_INDEX_32_ITEM} Result.make (b, mp, lab)
+					else
+						create {PE_TYPE_SPEC_INDEX_16_ITEM} Result.make (b, mp, lab)
+					end
+					Result.update_index (tu.index)
+
+				when {PE_MEMBER_REF_PARENT_INDEX}.moduleref then
+					if is_type_spec_table_using_4_bytes then
+						create {PE_MODULE_REF_INDEX_32_ITEM} Result.make (b, mp, lab)
+					else
+						create {PE_MODULE_REF_INDEX_16_ITEM} Result.make (b, mp, lab)
+					end
+					Result.update_index (tu.index)
+				when {PE_MEMBER_REF_PARENT_INDEX}.moduledef then
+					if is_type_spec_table_using_4_bytes then
+						create {PE_MODULE_INDEX_32_ITEM} Result.make (b, mp, lab)
+					else
+						create {PE_MODULE_INDEX_16_ITEM} Result.make (b, mp, lab)
+					end
+					Result.update_index (tu.index)
+
 				else
 					check False end
 					idx.report_error (create {PE_INDEX_ERROR}.make (idx))

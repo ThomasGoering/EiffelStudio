@@ -35,9 +35,30 @@ feature -- Access
 			Result := entries.count
 		end
 
+	entry_list (idx: PE_INDEX_ITEM; nb: NATURAL_32): LIST [G]
+		local
+			i, n: NATURAL_32
+		do
+			create {ARRAYED_LIST [G]} Result.make (nb.to_integer_32)
+			from
+				n := nb
+				i := idx.index
+			until
+				n = 0
+			loop
+				if valid_index (i) and then attached entry (i) as item then
+					Result.force (item)
+				end
+				i := i + 1
+				n := n - 1
+			end
+		ensure
+			Result.count = nb.to_integer_32
+		end
+
 	count: INTEGER
 
-	table_id: NATURAL_32
+	table_id: NATURAL_8
 
 	is_error: BOOLEAN
 			-- False by default
@@ -57,6 +78,7 @@ feature -- Read
 	read (pe: PE_FILE)
 		local
 			i, n: INTEGER
+			tok: NATURAL_32
 		do
 			address := pe.position.to_natural_32
 
@@ -69,6 +91,8 @@ feature -- Read
 			loop
 				if attached read_entry (pe) as e then
 					entries.force (e)
+					tok := (table_id.to_natural_32 |<< 24) | i.to_natural_32
+					e.set_token (tok)
 				else
 					check is_error end
 				end
