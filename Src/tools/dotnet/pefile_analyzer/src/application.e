@@ -48,6 +48,10 @@ feature {NONE} -- Initialization
 					elseif arg.is_case_insensitive_equal_general ("help") then
 						l_usage := True
 						i := i + 1
+					elseif arg.is_case_insensitive_equal_general ("debug") then
+						is_debug := True
+						i := i + 1
+
 					elseif arg.is_case_insensitive_equal_general ("analyze") then
 						has_analyzer := True
 					elseif arg.is_case_insensitive_equal_general ("no_analyze") then
@@ -113,6 +117,8 @@ feature {NONE} -- Initialization
 			end
 		end
 
+	is_debug: BOOLEAN
+
 	has_analyzer,
 	has_printer,
 	has_explorer: BOOLEAN
@@ -160,70 +166,83 @@ feature -- Execution
 			analyzer: PE_ANALYZER
 			explorer: PE_EXPLORER
 			resolver: PE_POINTER_RESOLVER
+			l_error_count: NATURAL_32
 		do
 			create pe.make (fn.name)
-			io.error.put_string ("Loading " + {UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (fn.name) + "%N")
+			if pe.is_access_readable then
+				io.error.put_string ("Loading " + {UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (fn.name) + "%N")
 
-			rt := pe.metadata_root
+				rt := pe.metadata_root
 
-			md_tables := rt.metadata_tables (pe)
+				md_tables := rt.metadata_tables (pe)
 
-			create o_dft.make (default_output)
-			if not o_dft.was_opened then
-				o_dft.open_write
-			end
+				create o_dft.make (default_output)
+				if not o_dft.was_opened then
+					o_dft.open_write
+				end
 
-			if has_analyzer then
-					-- Resolve FieldPointer and MethodPointer
-				create resolver.make (pe)
-				pe.accepts (resolver)
+				if has_analyzer then
+						-- Resolve FieldPointer and MethodPointer
+					create resolver.make (pe)
+					pe.accepts (resolver)
 
-				create analyzer.make (pe)
-				pe.accepts (analyzer)
-			end
-
-			if has_printer then
-				io.error.put_string ("Printing ...%N")
-				if printer_output = default_output then
-					o := o_dft
-				else
-					create o.make (printer_output)
-					if o.was_opened then
-						o.open_write
+					create analyzer.make (pe)
+					pe.accepts (analyzer)
+					l_error_count := analyzer.error_count
+					if l_error_count > 0 then
+						io.error.put_string ("ERROR: " + l_error_count.out + " error(s) detected%N")
+					else
+						debug ("pe_analyze")
+							io.error.put_string ("No error detected%N")
+						end
 					end
 				end
-				create printer.make (o)
-				o.put_string ("File: " + {UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (fn.name) + "%N")
-				pe.accepts (printer)
 
-				if o /= o_dft and then not o.was_opened then
-					o.close
-				end
-			end
+				if has_printer then
+					io.error.put_string ("Printing ...%N")
+					if printer_output = default_output then
+						o := o_dft
+					else
+						create o.make (printer_output)
+						if not o.was_opened then
+							o.open_write
+						end
+					end
+					create printer.make (o)
+					o.put_string ("File: " + {UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (fn.name) + "%N")
+					pe.accepts (printer)
 
-			if has_explorer then
-				io.error.put_string ("Exploring ...%N")
-				if explorer_output = default_output then
-					o := o_dft
-				else
-					create o.make (explorer_output)
-					if o.was_opened then
-						o.open_write
+					if o /= o_dft and then not o.was_opened then
+						o.close
 					end
 				end
-				create explorer.make (o, pe)
-				o.put_string ("File: " + {UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (fn.name) + "%N")
-				pe.accepts (explorer)
 
-				if o /= o_dft and then not o.was_opened then
-					o.close
+				if has_explorer then
+					io.error.put_string ("Exploring ...%N")
+					if explorer_output = default_output then
+						o := o_dft
+					else
+						create o.make (explorer_output)
+						if not o.was_opened then
+							o.open_write
+						end
+					end
+					create explorer.make (o, pe)
+					o.put_string ("File: " + {UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (fn.name) + "%N")
+					pe.accepts (explorer)
+
+					if o /= o_dft and then not o.was_opened then
+						o.close
+					end
 				end
-			end
 
-			if not o_dft.was_opened then
-				o_dft.close
+				if not o_dft.was_opened then
+					o_dft.close
+				end
+				io.error.put_string ("Completed.%N")
+			else
+				io.error.put_string ("Error: can not load the file!%N")
 			end
-			io.error.put_string ("Completed.%N")
 		end
 
 end

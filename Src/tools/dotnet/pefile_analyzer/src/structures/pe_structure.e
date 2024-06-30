@@ -271,6 +271,11 @@ feature -- Element change
 			add (create {PE_FLAGS_32}.make (lab))
 		end
 
+	add_pinvoke_attributes (lab: STRING)
+		do
+			add (create {PE_PINVOKE_ATTRIBUTES}.make (lab))
+		end
+
 	add_type_attributes (lab: STRING)
 		do
 			add (create {PE_TYPE_ATTRIBUTES}.make (lab))
@@ -284,6 +289,11 @@ feature -- Element change
 	add_method_attributes (lab: STRING)
 		do
 			add (create {PE_METHOD_ATTRIBUTES}.make (lab))
+		end
+
+	add_file_attributes (lab: STRING)
+		do
+			add (create {PE_FILE_ATTRIBUTES}.make (lab))
 		end
 
 	add_method_semantics_attributes (lab: STRING)
@@ -311,9 +321,14 @@ feature -- Element change
 			add (create {PE_STRING_INDEX}.make (lab))
 		end
 
-	add_index (lab: STRING)
+--	add_index (lab: STRING)
+--		do
+--			add (create {PE_INDEX}.make (lab))
+--		end
+
+	add_implementation_index (lab: STRING)
 		do
-			add (create {PE_INDEX}.make (lab))
+			add (create {PE_IMPLEMENTATION_INDEX}.make (lab))
 		end
 
 	add_blob_index (lab: STRING)
@@ -349,6 +364,10 @@ feature -- Element change
 		do
 			add (create {PE_SIGNATURE_BLOB_INDEX}.make_property (lab))
 		end
+	add_custom_attribute_value_signature_blob_index (lab: STRING)
+		do
+			add (create {PE_SIGNATURE_BLOB_INDEX}.make_custom_attribute_value (lab))
+		end
 
 	add_guid_index (lab: STRING)
 		do
@@ -358,6 +377,11 @@ feature -- Element change
 	add_memberref_parent_index (lab: STRING)
 		do
 			add (create {PE_MEMBER_REF_PARENT_INDEX}.make (lab))
+		end
+
+	add_member_forwarded_index (lab: STRING)
+		do
+			add (create {PE_MEMBER_FORWARDED_INDEX}.make (lab))
 		end
 
 	add_type_def_index (lab: STRING)
@@ -370,9 +394,19 @@ feature -- Element change
 			add (create {PE_TYPE_DEF_OR_REF_OR_SPEC_INDEX}.make (lab))
 		end
 
+	add_module_ref_index (lab: STRING)
+		do
+			add (create {PE_MODULE_REF_INDEX}.make (lab))
+		end
+
 	add_has_constant (lab: STRING)
 		do
 			add (create {PE_HAS_CONSTANT_INDEX}.make (lab))
+		end
+
+	add_has_field_marshal (lab: STRING)
+		do
+			add (create {PE_HAS_FIELD_MARSHAL_INDEX}.make (lab))
 		end
 
 	add_resolution_scope (lab: STRING)

@@ -30,7 +30,16 @@ feature {NONE} -- Access
 
 	pe_file: PE_FILE
 
+feature -- Access	
+
+	error_count: NATURAL_32
+
 feature -- Visitor
+
+	reset
+		do
+			error_count := 0
+		end
 
 	visit_pe_file (o: PE_FILE)
 		do
@@ -83,6 +92,10 @@ feature -- Visitor
 			current_table := o
 			update_list_indexes (o)
 			Precursor (o)
+			o.check_validity (pe_file)
+			if o.has_error then
+				error_count := error_count + o.error_count
+			end
 			current_table := Void
 		end
 
@@ -166,6 +179,10 @@ feature -- Visitor
 		do
 			current_table_entry := o
 			Precursor (o)
+			o.check_validity (pe_file)
+			if o.has_error then
+				error_count := error_count + o.error_count
+			end
 			current_table_entry := Void
 		end
 
@@ -286,10 +303,7 @@ feature -- Visitor
 				not idx.is_null_index and then idx.index /= table_count ({PE_TABLES}.tmemberref) + 1
 			then
 				if attached pe_file.member_ref (idx) as m then
-					if
-						attached m.name_index as m_name and then
-						attached pe_file.string_heap_item (m_name) as s
-					then
+					if attached m.resolved_identifier (pe_file) as s then
 						idx.set_info (create {PE_ITEM_INFO}.make (s))
 					else
 						idx.set_info (create {PE_ITEM_INFO}.make_link (m.to_link_string))
@@ -307,10 +321,7 @@ feature -- Visitor
 				idx.index /= table_count ({PE_TABLES}.tfield) + 1
 			then
 				if attached pe_file.field (idx) as f then
-					if
-						attached f.name_index as f_name and then
-						attached pe_file.string_heap_item (f_name) as s
-					then
+					if attached f.resolved_identifier (pe_file) as s then
 						idx.set_info (create {PE_ITEM_INFO}.make (s))
 					else
 						idx.set_info (create {PE_ITEM_INFO}.make (idx.to_string))
@@ -327,10 +338,7 @@ feature -- Visitor
 				not idx.is_null_index and then idx.index /= table_count ({PE_TABLES}.tparam) + 1
 			then
 				if attached pe_file.param (idx) as p then
-					if
-						attached p.name_index as p_name and then
-						attached pe_file.string_heap_item (p_name) as s
-					then
+					if attached p.resolved_identifier (pe_file) as s then
 						idx.set_info (create {PE_ITEM_INFO}.make (s))
 					else
 						idx.set_info (create {PE_ITEM_INFO}.make (idx.to_string))
@@ -367,10 +375,7 @@ feature -- Visitor
 				not idx.is_null_index and then idx.index /= table_count ({PE_TABLES}.tproperty) + 1
 			then
 				if attached pe_file.param (idx) as prp then
-					if
-						attached prp.name_index as prp_name and then
-						attached pe_file.string_heap_item (prp_name) as s
-					then
+					if attached prp.resolved_identifier (pe_file) as s then
 						idx.set_info (create {PE_ITEM_INFO}.make (s))
 					else
 						idx.set_info (create {PE_ITEM_INFO}.make (idx.to_string))
@@ -387,18 +392,8 @@ feature -- Visitor
 				not idx.is_null_index -- and then idx.index /= table_count ({PE_TABLES}.ttypedef) + 1
 			then
 				if attached pe_file.type_def (idx) as tdef then
-					if
-						attached tdef.name_index as tdef_name and then
-						attached pe_file.string_heap_item (tdef_name) as s
-					then
-						if
-							attached tdef.namespace_index as m_namespace and then
-							attached pe_file.string_heap_item (m_namespace) as ns
-						then
-							idx.set_info (create {PE_ITEM_INFO}.make (ns + "." +s))
-						else
-							idx.set_info (create {PE_ITEM_INFO}.make (s))
-						end
+					if attached tdef.resolved_identifier (pe_file) as s then
+						idx.set_info (create {PE_ITEM_INFO}.make (s))
 					else
 						idx.set_info (create {PE_ITEM_INFO}.make_link (tdef.to_link_string))
 					end
@@ -414,10 +409,7 @@ feature -- Visitor
 				not idx.is_null_index -- and then idx.index /= table_count ({PE_TABLES}.ttyperef) + 1
 			then
 				if attached pe_file.type_ref (idx) as tref then
-					if
-						attached tref.typename_index as tdef_typename and then
-						attached pe_file.string_heap_item (tdef_typename) as s
-					then
+					if attached tref.resolved_identifier (pe_file) as s then
 						idx.set_info (create {PE_ITEM_INFO}.make (s))
 					else
 						idx.set_info (create {PE_ITEM_INFO}.make_link (tref.to_link_string))
@@ -447,6 +439,11 @@ feature -- Visitor
 				not idx.is_null_index  -- and then idx.index /= table_count ({PE_TABLES}.ttypespec) + 1
 			then
 				if attached pe_file.module (idx) as t then
+					if attached t.resolved_identifier (pe_file) as s then
+						idx.set_info (create {PE_ITEM_INFO}.make (s))
+					else
+--						idx.set_info (create {PE_ITEM_INFO}.make_link (t.to_link_string))
+					end
 					-- Found
 				else
 					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
@@ -460,7 +457,11 @@ feature -- Visitor
 				not idx.is_null_index  -- and then idx.index /= table_count ({PE_TABLES}.ttypespec) + 1
 			then
 				if attached pe_file.moduleref (idx) as t then
-					-- Found
+					if attached t.resolved_identifier (pe_file) as s then
+						idx.set_info (create {PE_ITEM_INFO}.make (s))
+					else
+--						idx.set_info (create {PE_ITEM_INFO}.make_link (t.to_link_string))
+					end
 				else
 					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
 				end
@@ -473,7 +474,11 @@ feature -- Visitor
 				not idx.is_null_index  -- and then idx.index /= table_count ({PE_TABLES}.ttypespec) + 1
 			then
 				if attached pe_file.assembly (idx) as t then
-					-- Found
+					if attached t.resolved_identifier (pe_file) as s then
+						idx.set_info (create {PE_ITEM_INFO}.make (s))
+					else
+--						idx.set_info (create {PE_ITEM_INFO}.make_link (t.to_link_string))
+					end
 				else
 					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
 				end
@@ -486,7 +491,11 @@ feature -- Visitor
 				not idx.is_null_index  -- and then idx.index /= table_count ({PE_TABLES}.ttypespec) + 1
 			then
 				if attached pe_file.assemblyref (idx) as t then
-					-- Found
+					if attached t.resolved_identifier (pe_file) as s then
+						idx.set_info (create {PE_ITEM_INFO}.make (s))
+					else
+--						idx.set_info (create {PE_ITEM_INFO}.make_link (t.to_link_string))
+					end
 				else
 					idx.report_error (create {PE_INDEX_ERROR}.make (idx))
 				end
@@ -513,6 +522,8 @@ feature -- Visitor
 					idx.index > 0
 				then
 					if attached pe_file.signature_blob_heap_item (idx) as sig then
+						sig.set_associated_pe_file (pe_file)
+						sig.set_associated_table_entry (current_table_entry)
 						idx.set_info (create {PE_ITEM_INFO}.make (sig.to_string))
 					else
 						idx.report_error (create {PE_INDEX_ERROR}.make (idx))

@@ -12,6 +12,15 @@ inherit
 
 feature -- Access
 
+	token: NATURAL_32
+		do
+			Result := index
+		end
+
+	sorting_index: NATURAL_32
+		deferred
+		end
+
 	index: NATURAL_32
 		deferred
 		end
@@ -19,6 +28,14 @@ feature -- Access
 	is_null_index: BOOLEAN
 		do
 			Result := index = 0x0
+		end
+
+feature -- Comparison
+
+	is_less_than alias "<" (other: PE_INDEX_ITEM): BOOLEAN
+			-- Is current object less than `other'?
+		do
+			Result := sorting_index < other.sorting_index
 		end
 
 feature -- Element change

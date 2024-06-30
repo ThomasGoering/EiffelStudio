@@ -177,19 +177,8 @@ feature -- Visitor
 	typedef_fullname (e: PE_MD_TABLE_TYPEDEF_ENTRY): STRING_32
 		do
 			create Result.make (0)
-			if
-				attached e.namespace_index as e_ns and then
-				attached pe_file.string_heap_item (e_ns) as str
-			then
-				Result.append (str.to_string_32)
-				Result.append_character ('.')
-			end
-
-			if
-				attached e.name_index as e_n and then
-				attached pe_file.string_heap_item (e_n) as str
-			then
-				Result.append (str.to_string_32)
+			if attached e.resolved_identifier (pe_file) as str then
+				Result.append (str)
 			end
 			if Result.is_empty then
 				Result := "{?TypeDef?}"
@@ -200,19 +189,8 @@ feature -- Visitor
 	typeref_fullname (e: PE_MD_TABLE_TYPEREF_ENTRY): STRING_32
 		do
 			create Result.make (0)
-			if
-				attached e.typenamespace_index as e_ns and then
-				attached pe_file.string_heap_item (e_ns) as str
-			then
-				Result.append (str.to_string_32)
-				Result.append_character ('.')
-			end
-
-			if
-				attached e.typename_index as e_n and then
-				attached pe_file.string_heap_item (e_n) as str
-			then
-				Result.append (str.to_string_32)
+			if attached e.resolved_identifier (pe_file) as str then
+				Result.append (str)
 			end
 			if Result.is_empty then
 				Result := "{?TypeRef?}"
@@ -332,8 +310,11 @@ feature -- Visitor
 			end
 		end
 
+	current_table_entry: detachable PE_MD_TABLE_ENTRY
+
 	visit_table_entry (o: PE_MD_TABLE_ENTRY)
 		do
+			current_table_entry := o
 			if attached {PE_MD_TABLE_METHODDEF_ENTRY} o as mtd then
 				visit_method_def (mtd)
 			elseif attached {PE_MD_TABLE_FIELD_ENTRY} o as fld then
@@ -347,6 +328,7 @@ feature -- Visitor
 			else
 			end
 			Precursor (o)
+			current_table_entry := Void
 		end
 
 	visit_method_def (e: PE_MD_TABLE_METHODDEF_ENTRY)
@@ -359,12 +341,8 @@ feature -- Visitor
 			output_attributes (e.method_attributes)
 			output.put_new_line
 			output.indent
-			if
-				attached e.name_index as str_idx and then
-				str_idx.index > 0 and then
-				attached pe_file.string_heap_item (str_idx) as str
-			then
-				output.put_string (str.to_string_32)
+			if attached e.resolved_identifier (pe_file) as s then
+				output.put_string (s)
 			else
 				output.put_string ("?")
 			end
@@ -408,12 +386,8 @@ feature -- Visitor
 			output.put_new_line
 			output.indent
 
-			if
-				attached e.name_index as str_idx and then
-				str_idx.index > 0 and then
-				attached pe_file.string_heap_item (str_idx) as str
-			then
-				output.put_string (str.to_string_32)
+			if attached e.resolved_identifier (pe_file) as s then
+				output.put_string (s)
 			else
 				output.put_string ("???")
 			end
@@ -435,12 +409,8 @@ feature -- Visitor
 			else
 				check has_sequence: False end
 			end
-			if
-				attached e.name_index as str_idx and then
-				str_idx.index > 0 and then
-				attached pe_file.string_heap_item (str_idx) as str
-			then
-				output.put_string (str.to_string_32)
+			if attached e.resolved_identifier (pe_file) as s then
+				output.put_string (s)
 			else
 				output.put_string ("?")
 			end
@@ -453,12 +423,8 @@ feature -- Visitor
 
 			output_attributes (e.property_attributes)
 			output.indent
-			if
-				attached e.name_index as str_idx and then
-				str_idx.index > 0 and then
-				attached pe_file.string_heap_item (str_idx) as str
-			then
-				output.put_string (str.to_string_32)
+			if attached e.resolved_identifier (pe_file) as s then
+				output.put_string (s)
 			else
 				output.put_string ("?")
 			end
@@ -534,7 +500,9 @@ feature -- Visitor
 				attached sig_index and then
 				attached pe_file.signature_blob_heap_item (sig_index) as sig
 			then
-				output.put_string (" :")
+				output.put_string (" ")
+				sig.set_associated_pe_file (pe_file)
+				sig.set_associated_table_entry (current_table_entry)
 				output.put_string (sig.to_string)
 			end
 		end

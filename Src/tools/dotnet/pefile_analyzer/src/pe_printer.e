@@ -76,13 +76,17 @@ feature -- Visitor
 	visit_tables (o: PE_MD_TABLES)
 		local
 			i,u: INTEGER
+			l_sizes: PE_SIZE_SETTINGS
 		do
 			output.put_string ("[Metadata Tables] 0x"+short_hex_string (o.starting_address.to_hex_string)+"%N")
 			output.put_string (" - major.minor: " + o.major_version.to_string + "." + o.minor_version.to_string + "%N")
 			output.put_string (" - HeapSizes: " + o.heap_sizes.to_string + "%N")
 			output.put_string (" - Valid : " + o.valid.to_binary_string + "%N")
 			output.put_string (" - Sorted: " + o.sorted.to_binary_string + "%N")
-			output.put_string (" - Counts: ")
+			l_sizes := o.size_settings
+			output.put_string (" - Counts:")
+			output.put_new_line
+			output.indent
 			from
 				i := o.tables.lower
 				u := o.tables.upper
@@ -93,10 +97,17 @@ feature -- Visitor
 					output.put_string (
 						i.to_natural_8.to_hex_string + "."
 						+ o.table_name (i.to_natural_8)
-						+ "(" + o.tables_counts[i].out + ") ")
+						+ "(" + o.tables_counts[i].out
+						)
+					if l_sizes.is_table_using_4_bytes (i.to_natural_8, o, 0) then
+						output.put_string ("*")
+					end
+					output.put_string (")")
+					output.put_new_line
 				end
 				i := i + 1
 			end
+			output.exdent
 			output.put_new_line
 			output.put_line_divider
 			Precursor (o)
@@ -113,6 +124,16 @@ feature -- Visitor
 			output.put_string ("[Table " + o.tables.table_name (o.table_id)+ " " + o.table_id.to_natural_8.to_hex_string +"]("+ o.count.out +")"
 								+ " 0x"+ short_hex_string (o.address.to_hex_string)
 								+ "%N")
+			if o.has_error and then attached o.errors as errs then
+				across
+					errs as err_ic
+				loop
+					output.put_string (" => ERROR: ")
+					output.put_string (err_ic.item.to_string)
+					output.put_new_line
+				end
+			end
+
 
 --			output.indent
 			table_entry_index := 0
@@ -162,9 +183,9 @@ feature -- Visitor
 				row.put_string_array (o.to_string_array)
 				row[1] := {STRING_32} "[0x" + o.token.to_hex_string + " #" + table_entry_index.out +"] " + row [1]
 				ptb.add (row)
-				if o.has_error then
+				if o.has_error and then attached o.errors as errs then
 					across
-						o.errors as err_ic
+						errs as err_ic
 					loop
 						create row.make (2)
 						row.put_string (" => ERROR: ")
@@ -176,9 +197,9 @@ feature -- Visitor
 				output.put_string ("[0x" + o.token.to_hex_string + " #" + table_entry_index.out +"] ")
 				output.put_string (o.to_string)
 				output.put_new_line
-				if o.has_error then
+				if o.has_error and then attached o.errors as errs then
 					across
-						o.errors as err_ic
+						errs as err_ic
 					loop
 						output.put_string (" => ERROR: ")
 						output.put_string (err_ic.item.to_string)

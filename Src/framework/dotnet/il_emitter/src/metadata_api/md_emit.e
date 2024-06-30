@@ -1,6 +1,6 @@
 ﻿note
 	description: "[
-			MD_EMIT represents a set of in-memory metadata tables and creates a unique module version identifier (GUID) for the metadata. 
+			MD_EMIT represents a set of in-memory metadata tables and creates a unique module version identifier (GUID) for the metadata.
 			The class has the ability to add entries to the metadata tables and define the assembly information in the metadata.
 		]"
 	date: "$Date$"
@@ -266,14 +266,18 @@ feature {NONE} -- Implementation
 			tables_header.major_version := 2
 			tables_header.reserved2 := 1
 			tables_header.mask_sorted := ({INTEGER_64} 0x1600 |<< 32) + 0x3325FA00
-			if strings_heap_size = 65536 then
-				tables_header.heap_offset_sizes := tables_header.heap_offset_sizes | 1
+			--
+				--FIXME: check if size is about rows count, or offset (for Blob)
+				-- See II.24.2.6 #~ stream
+				-- Check size >= 2^16 = 0x1_0000
+			if strings_heap_size >= 0x1_0000 then
+				tables_header.heap_offset_sizes := tables_header.heap_offset_sizes | 0x1
 			end
-			if guid_heap_size >= 65536 then
-				tables_header.heap_offset_sizes := tables_header.heap_offset_sizes | 2
+			if guid_heap_size >= 0x1_0000 then
+				tables_header.heap_offset_sizes := tables_header.heap_offset_sizes | 0x2
 			end
-			if blob_heap_size >= 65536 then
-				tables_header.heap_offset_sizes := tables_header.heap_offset_sizes | 4
+			if blob_heap_size >= 0x1_0000 then
+				tables_header.heap_offset_sizes := tables_header.heap_offset_sizes | 0x4
 			end
 
 			create l_counts.make_filled (0, 1, Max_tables + Extra_indexes)
@@ -375,7 +379,7 @@ feature -- Save
 			valid_result: Result /= Void
 		end
 
-feature -- Save
+feature -- Pre-Save
 
 	prepare_to_save
 			-- Prepare data to be save
@@ -387,7 +391,7 @@ feature -- Save
 			l_missing_param_index_entries: ARRAYED_LIST [PE_METHOD_DEF_TABLE_ENTRY]
 		do
 			Precursor
-				-- Update all uninitialized PE_LIST (FieldList, MethodList, ParamList, ...)	
+				-- Update all uninitialized PE_LIST (FieldList, MethodList, ParamList, ...)
 			if attached md_table ({PE_TABLES}.tmethoddef) as tb then
 				max_meth_idx := tb.next_index
 			end
@@ -497,7 +501,87 @@ feature -- Save
 					l_missing_param_index_entries := Void
 				end
 			end
+
+				-- Sort tables...
+				-- CustomAttribute table
+			ensure_table_is_sorted ({PE_TABLES}.tcustomattribute)
+			ensure_table_is_sorted ({PE_TABLES}.tinterfaceimpl)
+			ensure_table_is_sorted ({PE_TABLES}.tmethodimpl)
+			ensure_table_is_sorted ({PE_TABLES}.tmethodsemantics)
 		end
+
+	ensure_table_is_sorted (tb_id: NATURAL_32)
+			-- Ensure table associated with `tb_id` is sorted.
+		do
+			if
+				attached md_table (tb_id) as tb and then
+				attached table_sorter (tb_id) as l_sorter
+			then
+				debug ("il_emitter")
+					if not tb.is_sorted (l_sorter) then
+						print ("Table ["+ tb_id.to_natural_8.to_hex_string +"] is NOT sorted%N")
+					end
+				end
+				tb.sort (l_sorter)
+				check tb.is_sorted (l_sorter) end
+			end
+		end
+
+	table_sorter (tb_id: NATURAL_32): detachable QUICK_SORTER [PE_TABLE_ENTRY_BASE]
+			-- Sorter for table associated with `tb_id`.
+		local
+			l_comparator: AGENT_EQUALITY_TESTER [PE_TABLE_ENTRY_BASE]
+		do
+			inspect tb_id
+			when {PE_TABLES}.tcustomattribute then
+				create l_comparator.make (agent (e1, e2: PE_TABLE_ENTRY_BASE): BOOLEAN
+					do
+						if
+							attached {PE_CUSTOM_ATTRIBUTE_TABLE_ENTRY} e1 as o1 and then
+							attached {PE_CUSTOM_ATTRIBUTE_TABLE_ENTRY} e2 as o2
+						then
+							Result := o1.less_than (o2)
+						end
+					end)
+			when {PE_TABLES}.tinterfaceimpl then
+				create l_comparator.make (agent (e1, e2: PE_TABLE_ENTRY_BASE): BOOLEAN
+					do
+						if
+							attached {PE_INTERFACE_IMPL_TABLE_ENTRY} e1 as o1 and then
+							attached {PE_INTERFACE_IMPL_TABLE_ENTRY} e2 as o2
+						then
+							Result := o1.less_than (o2)
+						end
+					end)
+			when {PE_TABLES}.tmethodimpl then
+				create l_comparator.make (agent (e1, e2: PE_TABLE_ENTRY_BASE): BOOLEAN
+					do
+						if
+							attached {PE_METHOD_IMPL_TABLE_ENTRY} e1 as o1 and then
+							attached {PE_METHOD_IMPL_TABLE_ENTRY} e2 as o2
+						then
+							Result := o1.less_than (o2)
+						end
+					end)
+			when {PE_TABLES}.tmethodsemantics then
+				create l_comparator.make (agent (e1, e2: PE_TABLE_ENTRY_BASE): BOOLEAN
+					do
+						if
+							attached {PE_METHOD_SEMANTICS_TABLE_ENTRY} e1 as o1 and then
+							attached {PE_METHOD_SEMANTICS_TABLE_ENTRY} e2 as o2
+						then
+							Result := o1.less_than (o2)
+						end
+					end)
+			else
+				-- Not implemented or not needed
+			end
+			if l_comparator /= Void then
+				create Result.make (l_comparator)
+			end
+		end
+
+feature -- Save
 
 	save (f_name: CLI_STRING)
 			-- Save current assembly to file `f_name'.
@@ -842,7 +926,7 @@ feature -- Settings
 feature -- Definition: Access
 
 	define_assembly_ref (assembly_name: CLI_STRING; assembly_info: MD_ASSEMBLY_INFO;
-			public_key_token: MD_PUBLIC_KEY_TOKEN): INTEGER
+			public_key_token: detachable MD_PUBLIC_KEY_TOKEN): INTEGER
 			-- Add assembly reference information to the metadata tables.
 		do
 			Result := assembly_emitter.define_assembly_ref (assembly_name, assembly_info, public_key_token)
@@ -1001,7 +1085,7 @@ feature -- Definition: Creation
 --				-- FieldList (an index into the Field table; it marks the first of a contiguous run of Fields owned by this Type).
 --			l_field_index := 1 -- Not yet initialized
 --				-- MethodList (an index into the MethodDef table; it marks the first of a continguous run of Methods owned by this Type).
---			l_method_index := 1 -- Not yet initialized			
+--			l_method_index := 1 -- Not yet initialized
 
 			create {PE_TYPE_DEF_TABLE_ENTRY} l_entry.make_with_uninitialized_field_and_method (flags, l_name_index, l_namespace_index, l_extends)
 			l_class_index := next_table_index (l_entry.table_index)

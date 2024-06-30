@@ -24,7 +24,8 @@ create
 	make_property_from_item,
 	make_locals_from_item,
 	make_field_or_method_from_item,
-	make_method_or_locals_from_item
+	make_method_or_locals_from_item,
+	make_custom_attribute_value_from_item
 
 convert
 	dump: {READABLE_STRING_8, STRING_8}
@@ -73,6 +74,12 @@ feature {NONE} -- Initialization
 			kind := method_or_locals_kind
 		end
 
+	make_custom_attribute_value_from_item (a_item: PE_BLOB_ITEM)
+		do
+			make_from_item (a_item)
+			kind := custom_attribute_value_kind
+		end
+
 	type_specification_kind: NATURAL_8 = 1
 	method_kind: NATURAL_8 = 2
 	field_kind: NATURAL_8 = 3
@@ -80,35 +87,52 @@ feature {NONE} -- Initialization
 	field_or_method_kind: NATURAL_8 = 5
 	method_or_locals_kind: NATURAL_8 = 6
 	property_kind: NATURAL_8 = 7
+	custom_attribute_value_kind: NATURAL_8 = 8
 
 	kind: NATURAL_8
 
+feature -- Additional access
+
+	associated_pe_file: detachable PE_FILE
+
+	set_associated_pe_file (pe: like associated_pe_file)
+		do
+			associated_pe_file := pe
+		end
+
+	associated_table_entry: detachable PE_MD_TABLE_ENTRY
+
+	set_associated_table_entry (e: like associated_table_entry)
+		do
+			associated_table_entry := e
+		end
+
 feature -- Status report	
 
-	is_type_specification_signature: BOOLEAN
-		do
-			Result := kind = type_specification_kind
-		end
+--	is_type_specification_signature: BOOLEAN
+--		do
+--			Result := kind = type_specification_kind
+--		end
 
-	is_method_signature: BOOLEAN
-		do
-			Result := kind = method_kind
-		end
+--	is_method_signature: BOOLEAN
+--		do
+--			Result := kind = method_kind
+--		end
 
-	is_field_signature: BOOLEAN
-		do
-			Result := kind = field_kind
-		end
+--	is_field_signature: BOOLEAN
+--		do
+--			Result := kind = field_kind
+--		end
 
-	is_property_signature: BOOLEAN
-		do
-			Result := kind = property_kind
-		end
+--	is_property_signature: BOOLEAN
+--		do
+--			Result := kind = property_kind
+--		end
 
-	is_field_or_method_signature: BOOLEAN
-		do
-			Result := kind = field_or_method_kind
-		end
+--	is_field_or_method_signature: BOOLEAN
+--		do
+--			Result := kind = field_or_method_kind
+--		end
 
 feature -- Conversion
 
@@ -129,8 +153,10 @@ feature -- Conversion
 				Result := {STRING_32} "FM-Sig"
 			when method_or_locals_kind then
 				Result := {STRING_32} "ML-Sig"
+			when custom_attribute_value_kind then
+				Result := {STRING_32} "CAV-Sig"
 			else
-				Result := {STRING_32} "Sig"
+				Result := {STRING_32} "<"+ kind.out +">Sig"
 			end
 		end
 
@@ -138,95 +164,52 @@ feature -- Conversion
 		local
 			tok: NATURAL_32
 			offset: INTEGER
-			k: NATURAL_8
+			k: INTEGER_8
+			l_reader: PE_MD_SIGNATURE_READER
 		do
 			if Result = Void then
-				-- FIXME: this code is wrong, .. review the signature decoding !!!
---				if is_type_specification_signature then
---					tok := uncompressed_type_token (uncompressed_data (pointer, 0, pointer.count))
---				else
---					k := pointer.read_natural_8_le (0)
---					-- DEFAULT: 0x0
---					-- VARARGS: 0x5
---					-- FIELD (FieldSig): 0x6
---					-- GENERIC: 0x10
---					tok := uncompressed_type_token (uncompressed_data (pointer, 1, pointer.count - 1))
---				end
---				if tok & 0xff00_0000 = 0xFF00_0000 then
-----					Result := {STRING_32} "!" + prefix_name + "<" + dump + ">"
---					Result := {STRING_32} "!!"
---				elseif tok = 0x0200_0000 then
---					Result := {STRING_32} "void "
---				else
---					Result := {STRING_32} "0x" + tok.to_hex_string
---				end
+				create l_reader.make (pointer, associated_pe_file, associated_table_entry)
 				Result := {STRING_32} " <<" + dump + ">>"
+				inspect kind
+				when type_specification_kind then
+					Result := l_reader.typespecsig + " " + Result
+				when method_kind then
+					Result := l_reader.methoddefsig + " " + Result
+				when field_or_method_kind, method_or_locals_kind then
+					if
+						attached l_reader.decoded_value as dv
+					then
+						Result := dv + Result
+					else
+						l_reader.reset_position
+						Result := l_reader.methoddefsig + " " + Result
+					end
+				else
+					if attached l_reader.decoded_value as dv then
+						Result := dv + Result
+					else
+						Result := {STRING_32} "ERROR:NotFullyImplemented("+ prefix_name +") "
+								+ Result
+					end
+				end
+			end
+			if Result [1] = ' ' then
+				Result.remove_head (1)
 			end
 		rescue
 			Result := prefix_name + "!<<" + dump + ">>"
 			retry
 		end
 
-	uncompressed_data (v: MANAGED_POINTER; pos: INTEGER; nb: INTEGER): INTEGER_32
+	methoddefsig_params: like {PE_MD_SIGNATURE_READER}.last_methoddefsig_params
 		local
-			i1, i2, i3, i4: NATURAL_32
-			n32: NATURAL_32
+			l_reader: PE_MD_SIGNATURE_READER
 		do
-			i1 := v.read_natural_8 (pos + 0)
-			if nb = 1 then
-				n32 := i1
-			else
-				i2 := v.read_natural_8 (pos + 1)
-				if nb = 2 then
-					n32 := (i1 |<< 8)
-							+ i2
-							- 0x0000_8000
-				elseif nb = 4 then
-					i3 := v.read_natural_8 (pos + 2)
-					i4 := v.read_natural_8 (pos + 3)
-
-					n32 := (i1 |<< 24).to_natural_32
-							+ (i2 |<< 16).to_natural_32
-							+ (i3 |<< 8).to_natural_32
-							+ (i4).to_natural_32
-							- 0xC000_0000
-				end
+			-- FIXME: ugly as using side effect
+			create l_reader.make (pointer, associated_pe_file, associated_table_entry)
+			if attached l_reader.methoddefsig then
+				Result := l_reader.last_methoddefsig_params
 			end
-			Result := n32.to_integer_32
-		ensure
-			class
-		end
-
-	uncompressed_type_token (v: INTEGER): NATURAL_32
-		local
-			enc: INTEGER
-			val: NATURAL_32
-			tag: NATURAL_32
-		do
-			enc := (v & 0x0000_0003)
-			val := (v |>> 2).to_natural_32
-			inspect
-				enc
-			when 0 then
-					-- TypeDef Token
-				tag := {PE_TABLES}.ttypedef
-			when 1 then
-					-- Typeref Token
-				tag := {PE_TABLES}.ttyperef
-			when 2 then
-					-- TypeSpec Token
-				tag := {PE_TABLES}.ttypespec
-			else
---				check known: False end
-				tag := 0xFF -- {PE_TABLES}.ttypedef
-			end
-			if tag = 0xFF then
-				Result := 0xFF00_1111
-			else
-				Result := ((tag |<< 24) | val)
-			end
-		ensure
-			class
 		end
 
 end

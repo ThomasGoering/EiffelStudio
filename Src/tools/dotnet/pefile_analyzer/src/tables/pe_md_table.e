@@ -9,6 +9,8 @@ deferred class
 inherit
 	PE_VISITABLE
 
+	PE_WITH_ERROR_SUPPORT
+
 feature {NONE} -- Initialization
 
 	make (a_tables: PE_MD_TABLES; pe: PE_FILE; tb_id: like table_id; nb: NATURAL_32)
@@ -73,6 +75,13 @@ feature -- Access
 			end
 		end
 
+feature -- Check validity
+
+	check_validity (pe: PE_FILE)
+		do
+			-- redefine if needed
+		end
+
 feature -- Read
 
 	read (pe: PE_FILE)
@@ -82,6 +91,10 @@ feature -- Read
 		do
 			address := pe.position.to_natural_32
 
+			debug ("pe_analyze")
+				io.error.put_string ("Read table " + {PE_MD_TABLES}.table_name (table_id) + "  " + table_id.to_hex_string + " (" + count.out + ") at 0x"+ address.to_hex_string +"%N")
+			end
+
 			entries.wipe_out
 			from
 				i := 1
@@ -90,6 +103,10 @@ feature -- Read
 				i > n
 			loop
 				if attached read_entry (pe) as e then
+					debug ("pe_analyze")
+						io.error.put_string_32 ({STRING_32} "  + " + e.to_string + "%N")
+					end
+
 					entries.force (e)
 					tok := (table_id.to_natural_32 |<< 24) | i.to_natural_32
 					e.set_token (tok)
