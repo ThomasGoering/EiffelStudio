@@ -48,6 +48,11 @@ feature -- Access
 			Result := n.item (n.count) = '&'
 		end
 
+	has_generic: BOOLEAN
+			-- Has generic?
+		do
+		end
+
 feature -- Setting
 
 	set_is_by_ref

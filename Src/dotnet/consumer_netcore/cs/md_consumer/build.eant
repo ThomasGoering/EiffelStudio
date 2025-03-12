@@ -12,12 +12,15 @@
 	</target>
 	
 	<target name="compile" >
-		<exec executable="dotnet build -c Release" />
-		<exec executable="dotnet publish -c Release" />
+		<exec executable="dotnet build -c Release md_consumer.csproj" />
+		<exec executable="dotnet publish -c Release md_consumer.csproj" />
 	</target>
 	<target name="clean" >
-		<exec executable="dotnet clean -c Release" />
-		<exec executable="rm -rf bin; rm -rf obj" />
+		<echo message="- Clean nemdc - md_consumer" />
+		<exec executable="dotnet clean -c Release md_consumer.csproj" />
+		<exec executable="rm -rf bin; rm -rf obj" unless="$is_windows" accept_errors="true"/>
+		<exec executable="rd /q/s bin" if="$is_windows" accept_errors="true"/>
+		<exec executable="rd /q/s obj" if="$is_windows" accept_errors="true"/>
 	</target>
 	<target name="clobber" depend="clean" />
 	

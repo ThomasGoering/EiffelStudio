@@ -19,6 +19,11 @@ inherit
 			{ANY} system, workbench
 		end
 
+	SHARED_EIFFEL_PROJECT
+		export
+			{NONE} all
+		end
+
 	CLI_EMITTER_SERVICE
 		export
 			{NONE} all
@@ -73,7 +78,7 @@ create {CIL_CODE_GENERATOR}
 feature {NONE} -- Initialization
 
 	make (
-			a_module_name: like module_name;
+			a_module_name_with_extension: like module_name_with_extension;
 			a_file_name: like module_file_name;
 			a_c_module_name: like c_module_name;
 			a_public_key: like public_key;
@@ -81,25 +86,68 @@ feature {NONE} -- Initialization
 			a_assembly_info: like assembly_info;
 			a_module_id: INTEGER;
 			a_is_debug_mode: BOOLEAN;
-			a_is_main_module: BOOLEAN)
+			a_is_main_module: BOOLEAN;
+			a_is_using_multi_assembly: BOOLEAN)
 
 			-- Create a new module of name `a_file_name' using metadata dispenser `a_dispenser'.
 			-- If `a_is_main_module', current is an assembly manifest.
 		require
 			a_file_name_not_void: a_file_name /= Void
 			a_file_name_not_empty: not a_file_name.is_empty
-			a_module_name_not_void: a_module_name /= Void
-			a_module_name_not_empty: not a_module_name.is_empty
+			a_module_name_not_void: a_module_name_with_extension /= Void
+			a_module_name_not_empty: not a_module_name_with_extension.is_empty
+			a_module_name_with_extension: a_module_name_with_extension.has ('.')
 			a_il_code_generator_not_void: a_il_code_generator /= Void
 			a_module_id_non_negative: a_module_id > 0
+		local
+			i: INTEGER
+			f_ext, ext: READABLE_STRING_32
 		do
-			module_name := a_module_name
+			debug ("il_emitter_table")
+				print ({STRING_32} "IL_MODULE: " + a_module_name_with_extension + "%N")
+			end
+
+			i := a_file_name.last_index_of ('.', a_file_name.count)
+			if i > 0 then
+				f_ext := a_file_name.substring (i + 1, a_file_name.count)
+			else
+				check module_file_name_has_extension: False end
+				f_ext := "dll" -- Default
+			end
+
+			i := a_module_name_with_extension.last_index_of ('.', a_module_name_with_extension.count)
+			if i > 0 then
+				ext := a_module_name_with_extension.substring (i + 1, a_module_name_with_extension.count)
+				if ext.is_case_insensitive_equal ("exe") or ext.is_case_insensitive_equal ("dll") then
+					module_name_with_extension := a_module_name_with_extension
+					module_name := a_module_name_with_extension.substring (1, i - 1)
+				else
+					check has_valid_extension: False end
+					module_name := a_module_name_with_extension
+					if f_ext /= Void then
+						module_name_with_extension := a_module_name_with_extension + "." + f_ext
+					else
+						check has_extension: False end
+						module_name_with_extension := a_module_name_with_extension
+					end
+				end
+			else
+				check has_extension: False end
+				module_name := a_module_name_with_extension
+				if f_ext /= Void then
+					module_name_with_extension := a_module_name_with_extension + "." + f_ext
+				else
+					check has_extension: False end
+					module_name_with_extension := a_module_name_with_extension
+				end
+			end
 			module_file_name := a_file_name
 			public_key := a_public_key
 			il_code_generator := a_il_code_generator
 			assembly_info := a_assembly_info
 			module_id := a_module_id
 			is_debug_info_enabled := a_is_debug_mode
+			is_using_multi_assemblies := a_is_using_multi_assembly
 			is_assembly_module := a_is_main_module
 			if not is_assembly_module then
 				is_dll := True
@@ -111,7 +159,7 @@ feature {NONE} -- Initialization
 			any_type_id := system.any_class.compiled_class.types.first.static_type_id
 		ensure
 			module_file_name_set: module_file_name = a_file_name
-			module_name_set: module_name = a_module_name
+			module_name_set: module_name_with_extension = a_module_name_with_extension
 			c_module_name_set: c_module_name = a_c_module_name
 			public_key_set: public_key = a_public_key
 			il_code_generator_set: il_code_generator = a_il_code_generator
@@ -138,6 +186,9 @@ feature -- Access
 
 	module_name: STRING
 			-- Name of current module
+
+	module_name_with_extension: STRING
+			-- Name of current module with extension
 
 	module_file_name: READABLE_STRING_32
 			-- Location where current will be generated.
@@ -174,8 +225,11 @@ feature -- Status report
 
 	is_assembly_module: BOOLEAN
 			-- Does current represent an assembly manifest?
-			-- I.e. an assembly is made of modules and of one assembly manifest which
+			-- I.e. an assembly is made of modules/assemblies and of one assembly manifest which
 			-- is a module with `Assembly' table metadata.
+
+	is_using_multi_assemblies: BOOLEAN
+			-- Using multi-assemblies instead of multi-modules.
 
 	is_dll, is_console_application: BOOLEAN
 			-- Nature of generated module.
@@ -199,6 +253,7 @@ feature -- Access: tokens
 
 	mscorlib_token: INTEGER
 			-- Token for `mscorlib' assembly.
+			-- NOTE: it may also be System.Runtime assembly...
 
 	runtime_type_handle_token: INTEGER
 			-- Token for `System.RuntimeTypeHandle' in `mscorlib'.
@@ -359,13 +414,13 @@ feature {CIL_CODE_GENERATOR} -- Custom attributes: modification
 			l_method_sig: like method_sig
 		do
 			if not is_thread_static_attribute_defined then
-				attribute_class_token := md_emit.define_type_ref (create {CLI_STRING}.make ("System.ThreadStaticAttribute"), mscorlib_token)
+				attribute_class_token := md_emit.define_type_ref (uni_string ("System.ThreadStaticAttribute"), mscorlib_token)
 				l_method_sig := method_sig
 				l_method_sig.reset
 				l_method_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.has_current | {MD_SIGNATURE_CONSTANTS}.default_sig)
 				l_method_sig.set_parameter_count (0)
 				l_method_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
-				thread_static_attribute_ctor_token := md_emit.define_member_ref (create {CLI_STRING}.make (".ctor"), attribute_class_token, l_method_sig)
+				thread_static_attribute_ctor_token := md_emit.define_member_ref (dot_ctor_uni_string, attribute_class_token, l_method_sig)
 			end
 			md_emit.define_custom_attribute (field_token, thread_static_attribute_ctor_token, empty_ca).do_nothing
 		end
@@ -381,17 +436,40 @@ feature {CIL_CODE_GENERATOR} -- Synchronization tokens
 				method_name.is_equal ("Pulse") or else method_name.is_equal ("PulseAll")
 		local
 			monitor_token: INTEGER
+			l_mscorlib_token: INTEGER
 			l_sig: like method_sig
+			l_version: VERSION
+			l_ass_info: MD_ASSEMBLY_INFO
+			l_system_threading: ASSEMBLY_I
 		do
-			monitor_token := md_emit.define_type_ref (create {CLI_STRING}.make ("System.Threading.Monitor"), mscorlib_token)
+			l_mscorlib_token := mscorlib_token
+			if system.is_il_netcore then
+				l_system_threading := if attached system.system_threading_monitor_class.public_assembly as l_assembly then l_assembly else system.system_threading_monitor_class.assembly end
+				create l_version
+				check
+					version_valid: l_version.is_version_valid (l_system_threading.assembly_version)
+				end
+
+				l_version.set_version (l_system_threading.assembly_version)
+				l_ass_info := md_factory.assembly_info
+				l_ass_info.set_major_version (l_version.major.to_natural_16)
+				l_ass_info.set_minor_version (l_version.minor.to_natural_16)
+				l_ass_info.set_build_number (l_version.build.to_natural_16)
+				l_ass_info.set_revision_number (l_version.revision.to_natural_16)
+
+
+				l_mscorlib_token := define_assembly_reference ("System.Threading", l_ass_info.string, "", l_system_threading.assembly_public_key_token)
+			end
+
+
+			monitor_token := md_emit.define_type_ref (uni_string ("System.Threading.Monitor"), l_mscorlib_token)
 			l_sig := method_sig
 			l_sig.reset
 			l_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.default_sig)
 			l_sig.set_parameter_count (1)
 			l_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.element_type_void, 0)
 			l_sig.set_type ({MD_SIGNATURE_CONSTANTS}.element_type_object, 0)
-			uni_string.set_string (method_name)
-			Result := md_emit.define_member_ref (uni_string, monitor_token, l_sig)
+			Result := md_emit.define_member_ref (uni_string (method_name), monitor_token, l_sig)
 		ensure
 			defined: Result /= 0
 		end
@@ -577,10 +655,13 @@ feature {CIL_CODE_GENERATOR} -- Once manifest strings: management
 		do
 				-- Define helper class.
 			helper_class_token := md_emit.define_type (
-				runtime_helper_class_name,
-				{MD_TYPE_ATTRIBUTES}.Auto_class | {MD_TYPE_ATTRIBUTES}.Auto_layout | {MD_TYPE_ATTRIBUTES}.Public,
-				object_type_token,
-				Void)
+					runtime_helper_class_name,
+					{MD_TYPE_ATTRIBUTES}.Auto_class |
+					{MD_TYPE_ATTRIBUTES}.Auto_layout |
+					{MD_TYPE_ATTRIBUTES}.Public,
+					object_type_token,
+					Void
+				)
 			once_string_class_token_value := helper_class_token
 
 				-- Emit field for CIL strings.
@@ -752,6 +833,9 @@ feature {NONE} -- Once manifest strings: tokens
 	once_immutable_string_32_class_token_value: INTEGER
 			-- Token of a run-time helper class that keeps values of once manifest strings (IMMUTABLE_STRING_32)
 
+	main_assembly_ref_token_value: INTEGER
+			-- Assembly ref token of main assembly.
+
 	once_string_class_token: INTEGER
 			-- Token of a run-time helper class that keeps values of once manifest strings
 		local
@@ -772,7 +856,11 @@ feature {NONE} -- Once manifest strings: tokens
 					once_string_resolution_token := 1
 				else
 						-- Take token of main (assembly) module.
-					once_string_resolution_token := 0
+					if is_using_multi_assemblies then
+						once_string_resolution_token := main_assembly_ref_token
+					else
+						once_string_resolution_token := 0 -- It seems that using `0` means current assembly...
+					end
 				end
 				Result := md_emit.define_type_ref (runtime_helper_class_name, once_string_resolution_token)
 				once_string_class_token_value := Result
@@ -782,6 +870,19 @@ feature {NONE} -- Once manifest strings: tokens
 			token_defined: is_once_string_class_defined
 			consistent_result: Result = once_string_class_token_value
 			old_token_preserved: (old is_once_string_class_defined) implies once_string_class_token_value = old once_string_class_token_value
+		end
+
+	main_assembly_ref_token: INTEGER
+			-- Assembly ref token of the main assembly.
+		do
+			Result := main_assembly_ref_token_value
+
+			if Result = 0 then
+				Result := module_reference_token (il_code_generator.main_module)
+				main_assembly_ref_token_value := Result
+			end
+		ensure
+			valid_result: Result /= 0
 		end
 
 feature -- Access: types
@@ -796,8 +897,52 @@ feature -- Access: types
 
 feature {NONE} -- Access: code generation
 
-	uni_string: CLI_STRING
+	dot_ctor_uni_string: CLI_STRING
+		do
+			Result := internal_dot_ctor_uni_string
+			if Result = Void then
+				create Result.make (".ctor")
+				internal_dot_ctor_uni_string := Result
+			end
+		end
+
+	uni_string (s: READABLE_STRING_GENERAL): CLI_STRING
 			-- Buffer for all Unicode string conversion.
+			-- Do no keep a reference on that result value.
+		do
+			Result := internal_uni_string
+			if Result = Void then
+					-- Note: this means, there is no buffer for all unicode string conversion !
+					-- `initialize_uni_string` needs to be called for that.
+				create Result.make (s)
+			else
+					-- Reuse CLI_STRING object for performance.
+				Result.set_string (s)
+			end
+		ensure
+			expected_string: Result.string_32.same_string_general (s)
+		end
+
+	initialize_uni_string (nb: INTEGER)
+		do
+			if
+				attached {EXECUTION_ENVIRONMENT}.item ("ISE_OPTS") as l_opts and then
+				l_opts.has_substring ("disable_uni_string_buffer")
+			then
+					-- Disable uni_string reusable buffer.
+				internal_uni_string := Void
+			else
+				create internal_uni_string.make_empty (1_024)
+			end
+		end
+
+	reset_uni_string
+		do
+			internal_uni_string := Void
+		end
+
+	internal_uni_string: detachable like uni_string
+	internal_dot_ctor_uni_string: detachable like uni_string
 
 feature {NONE} -- Access: metadata generation
 
@@ -1004,15 +1149,30 @@ feature -- Code generation
 			attribute_ctor: INTEGER
 			sig: MD_METHOD_SIGNATURE
 			ca_token: INTEGER
+			i: INTEGER
+			rt_v: STRING_32
+			l_mod_name_string: CLI_STRING
+			md_ui: MD_UI
 		do
 				-- Mark Current has being generated.
 			is_generated := True
 
-			md_emit := a_dispenser.emitter
+			create md_ui.make_with_action (agent (m: detachable READABLE_STRING_GENERAL)
+					do
+						degree_output.flush_output
+					end)
+
+			md_ui.checkpoint (generator + ".prepare")
+
+			md_emit := a_dispenser.emitter (md_ui)
 			create method_writer.make
 
 				-- Create Unicode string buffer.
-			create uni_string.make_empty (1024)
+			initialize_uni_string (1024)
+
+				-- Module name
+			create l_mod_name_string.make (module_name)
+			md_emit.set_module_name (l_mod_name_string)
 
 				-- Create default signature.
 			create default_sig.make
@@ -1038,13 +1198,22 @@ feature -- Code generation
 			generic_ctor_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 			generic_ctor_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_class, ise_generic_type_token)
 
-			uni_string.set_string (module_name)
-
-			if is_assembly_module then
+			if is_assembly_module or is_using_multi_assemblies then
 				ass := md_factory.assembly_info
 				create l_version
-				if l_version.is_version_valid (assembly_info.version) then
-					l_version.set_version (assembly_info.version)
+				if
+					attached assembly_info as l_assembly_info and then
+					l_version.is_version_valid (l_assembly_info.version)
+				then
+					l_version.set_version (l_assembly_info.version)
+					ass.set_major_version (l_version.major.to_natural_16)
+					ass.set_minor_version (l_version.minor.to_natural_16)
+					ass.set_build_number (l_version.build.to_natural_16)
+					ass.set_revision_number (l_version.revision.to_natural_16)
+				elseif attached system.msil_version as l_system_version then
+
+					check is_using_multi_assemblies end
+					l_version.set_version (l_system_version)
 					ass.set_major_version (l_version.major.to_natural_16)
 					ass.set_minor_version (l_version.minor.to_natural_16)
 					ass.set_build_number (l_version.build.to_natural_16)
@@ -1055,7 +1224,7 @@ feature -- Code generation
 					l_assembly_flags := {MD_ASSEMBLY_FLAGS}.public_key
 				end
 				associated_assembly_token :=
-					md_emit.define_assembly (uni_string, l_assembly_flags, ass, public_key)
+					md_emit.define_assembly (l_mod_name_string, l_assembly_flags, ass, public_key)
 
 				if is_debug_info_enabled then
 					md_emit.define_custom_attribute (associated_assembly_token,
@@ -1065,7 +1234,7 @@ feature -- Code generation
 				if system.is_il_netcore then
 						-- TODO: check if this custom attribute should be for any module, or just for the main one. [2023-05-26]
 					target_framework_attr_type_token := md_emit.define_type_ref (
-							create {CLI_STRING}.make ("System.Runtime.Versioning.TargetFrameworkAttribute"),
+							uni_string ("System.Runtime.Versioning.TargetFrameworkAttribute"),
 							mscorlib_token
 						)
 
@@ -1077,33 +1246,48 @@ feature -- Code generation
 					sig.set_type ({MD_SIGNATURE_CONSTANTS}.element_type_string, string_type_token)
 
 					attribute_ctor := md_emit.define_member_ref (
-							create {CLI_STRING}.make (".ctor"),
+							dot_ctor_uni_string,
 							target_framework_attr_type_token,
 							sig
 						)
-
+					rt_v := system.clr_runtime_version
+					if
+						rt_v /= Void  and then
+						rt_v.starts_with_general ("net")
+					then
+						i := rt_v.index_of ('/', 1)
+						if i > 0 then
+							rt_v := rt_v.head (i - 1)
+						end
+						rt_v := rt_v.substring (4, rt_v.count) -- Remove the "net"
+					else
+						debug ("refactor_fixme")
+							fixme ("Check if this is acceptable default version number ! [2023-09-18")
+						end
+						rt_v := "6.0" -- Hardcoded value!!!
+					end
 					create ca.make
-					ca.put_string (".NETCoreApp,Version=v6.0")
+					ca.put_string (".NETCoreApp,Version=v" + rt_v)
+					ca.put_integer_16 (0)
 
-						-- Number of named arguments
-					ca.put_integer_16 (1)
-						-- We mark it's a property
-					ca.put_integer_8 ({MD_SIGNATURE_CONSTANTS}.element_type_property)
-						-- Fill `FieldOrPropType' in `ca'
-					ca.put_integer_8 ({MD_SIGNATURE_CONSTANTS}.element_type_string)
-						-- Put the name of the property
-					ca.put_string ("FrameworkDisplayName")
-						-- Put the value
-					ca.put_string ("")
+-- The "FrameworkDisplayName" is not required
+--						-- Number of named arguments
+--					ca.put_integer_16 (1)
+--						-- We mark it's a property
+--					ca.put_integer_8 ({MD_SIGNATURE_CONSTANTS}.element_type_property)
+--						-- Fill `FieldOrPropType' in `ca'
+--					ca.put_integer_8 ({MD_SIGNATURE_CONSTANTS}.element_type_string)
+--						-- Put the name of the property
+--					ca.put_string ("FrameworkDisplayName")
+--						-- Put the value
+--					ca.put_string ("NET 6.0")
+--					ca.put_integer_16 (0)
 					ca_token := md_emit.define_custom_attribute (associated_assembly_token, attribute_ctor, ca)
 				end
 			end
 
-			md_emit.set_module_name (uni_string)
-
 			if is_debug_info_enabled then
-				uni_string.set_string (module_file_name)
-				dbg_writer := md_factory.dbg_writer (md_emit, uni_string, True)
+				dbg_writer := md_factory.dbg_writer (md_emit, uni_string (module_file_name), True)
 				if not dbg_writer.is_successful then
 					Error_handler.insert_error (create {VIGE}.make_pdb_in_use (module_file_name))
 					error_handler.raise_error
@@ -1138,9 +1322,12 @@ feature -- Code generation
 			l_type_id := a_class_type.implementation_id
 
 			l_entry_type_token := md_emit.define_type (
-				create {CLI_STRING}.make ("MAIN"), {MD_TYPE_ATTRIBUTES}.Ansi_class |
-					{MD_TYPE_ATTRIBUTES}.Auto_layout | {MD_TYPE_ATTRIBUTES}.public,
-				object_type_token, Void)
+					uni_string ("MAIN"),
+					{MD_TYPE_ATTRIBUTES}.Ansi_class |
+					{MD_TYPE_ATTRIBUTES}.Auto_layout |
+					{MD_TYPE_ATTRIBUTES}.public,
+					object_type_token, Void
+				)
 
 				-- First we create a static function which takes one argument: In our case an instance of class ANY.
 				-- This function then creates the root object and calls the creation feature.
@@ -1151,11 +1338,13 @@ feature -- Code generation
 			l_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 			l_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_class, ise_eiffel_type_info_type_token)
 
-			l_root_creator_token := md_emit.define_method (create {CLI_STRING}.make ("create_and_call_root_object"),
-				l_entry_type_token, {MD_METHOD_ATTRIBUTES}.Public |
-				{MD_METHOD_ATTRIBUTES}.Hide_by_signature |
-				{MD_METHOD_ATTRIBUTES}.Static, l_sig,
-				{MD_METHOD_ATTRIBUTES}.Managed)
+			l_root_creator_token := md_emit.define_method (uni_string ("create_and_call_root_object"),
+					l_entry_type_token,
+					{MD_METHOD_ATTRIBUTES}.Public |
+					{MD_METHOD_ATTRIBUTES}.Hide_by_signature |
+					{MD_METHOD_ATTRIBUTES}.Static, l_sig,
+					{MD_METHOD_ATTRIBUTES}.Managed
+				)
 
 			if is_debug_info_enabled then
 				il_code_generator.define_custom_attribute (l_root_creator_token,
@@ -1172,7 +1361,7 @@ feature -- Code generation
 				il_code_generator.internal_generate_external_call (ise_runtime_token, 0,
 					Runtime_class_name, "assertion_initialize",
 					{SHARED_IL_CONSTANTS}.static_type, <<type_handle_class_name>>,
-					Void, False)
+					Void, False, Void)
 			end
 
 				-- Create ISE_EXCEPTION_MANAGER object and assign it to ISE_RUNTIME.
@@ -1184,7 +1373,7 @@ feature -- Code generation
 			l_meth_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_class, ise_exception_manager_type_token)
 			l_set_exception_manager_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("set_exception_manager"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("set_exception_manager"), ise_runtime_type_token, l_meth_sig)
 			il_code_generator.method_body.put_static_call (l_set_exception_manager_token, 1, False)
 
 			if
@@ -1198,7 +1387,7 @@ feature -- Code generation
 				l_field_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_class,
 					ise_rt_extension_type_token)
 				l_rt_extension_object_token := md_emit.define_member_ref (
-					create {CLI_STRING}.make ("rt_extension_object"),
+					uni_string ("rt_extension_object"),
 					ise_runtime_type_token,
 					l_field_sig)
 				il_code_generator.method_body.put_opcode_mdtoken ({MD_OPCODES}.stsfld, l_rt_extension_object_token)
@@ -1241,7 +1430,7 @@ feature -- Code generation
 			l_sig.set_parameter_count (0)
 			l_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 
-			entry_point_token := md_emit.define_method (create {CLI_STRING}.make ("Main"),
+			entry_point_token := md_emit.define_method (uni_string ("Main"),
 				l_entry_type_token, {MD_METHOD_ATTRIBUTES}.Public |
 				{MD_METHOD_ATTRIBUTES}.Hide_by_signature |
 				{MD_METHOD_ATTRIBUTES}.Static, l_sig,
@@ -1262,7 +1451,7 @@ feature -- Code generation
 				il_code_generator.internal_generate_external_call (ise_runtime_token, 0,
 					Runtime_class_name, "assertion_initialize",
 					{SHARED_IL_CONSTANTS}.static_type, <<type_handle_class_name>>,
-					Void, False)
+					Void, False, Void)
 			end
 
 				-- Dummy ANY object for context in case `system.root_type' is generic.
@@ -1284,6 +1473,7 @@ feature -- Code generation
 			l_pe_file: CLI_PE_FILE
 			l_debug_info: MANAGED_POINTER
 			ept: like entry_point_token
+			loc: PATH
 		do
 			l_pe_file := md_factory.pe_file (module_file_name, is_dll or is_console_application, is_dll, is_32bits, md_emit)
 			if is_debug_info_enabled then
@@ -1308,12 +1498,115 @@ feature -- Code generation
 			end
 			l_pe_file.save
 
+			if is_using_multi_assemblies then
+				-- FIXME: also save associated .deps.json file!
+				create loc.make_from_string (module_file_name)
+				if attached loc.parent as l_parent then
+					-- FIXME
+					-- It seems deps.json file per file is not needed.
+					-- still under testing, if we are sure we need
+					-- to remove the feature deploy_netcore_deps_json_file
+					-- deploy_netcore_deps_json_file (defined_assemblies, system, l_parent, module_name + ".deps.json")
+				end
+			end
+
 			wipe_out
 			is_generated := False
 			is_saved := True
+			debug ("il_emitter_table")
+				print ({STRING_32} "IL_MODULE: " + module_name_with_extension + " SAVED%N")
+			end
 		ensure
 			is_generated_set: not is_generated
 			is_saved: is_saved
+		end
+
+feature -- Netcore deployment
+
+	deploy_netcore_deps_json_file (a_assemblie: like defined_assemblies;
+				a_system: SYSTEM_I; a_target_directory: PATH; a_target_filename: READABLE_STRING_GENERAL)
+		local
+			f: PLAIN_TEXT_FILE
+			vars: CIL_PROJECT_INFO
+			s, libs_tpl, libs: STRING
+			l_versioned_name: STRING_32
+			l_name: READABLE_STRING_GENERAL
+			l_version: READABLE_STRING_GENERAL
+		do
+			create vars.make_from_system (system)
+
+			s := "[
+{
+  "runtimeTarget": {
+    "name": "${CLR_RUNTIME}",
+    "signature": ""
+  },
+  "targets": {
+    "${CLR_RUNTIME}": {
+      "${LIB_NAME_VERSION}": {
+        "runtime": {
+          "${LIB_NAME}.${LIB_TYPE}": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "${LIB_NAME_VERSION}": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }${LIBRARIES}
+  }
+}
+			]"
+			s.replace_substring_all ("${CLR_RUNTIME}", {CIL_GENERATOR}.to_json_string (vars.clr_runtime))
+			create l_versioned_name.make_from_string_general (module_name)
+			if attached assembly_info as l_ass_info then
+				l_version := l_ass_info.version
+			else
+				l_version := vars.system_version
+			end
+			if l_version /= Void then
+				l_versioned_name.append_character ('/')
+				l_versioned_name.append (l_version)
+			end
+			s.replace_substring_all ("${LIB_NAME_VERSION}", {CIL_GENERATOR}.to_json_string (l_versioned_name))
+			s.replace_substring_all ("${LIB_NAME}", {CIL_GENERATOR}.to_json_string (module_name))
+			s.replace_substring_all ("${LIB_TYPE}", "dll")
+
+
+			-- FIXME: use the list of .Net assemblies, and generated assemblies to get versions and related information.
+			if a_assemblie /= Void and then not a_assemblie.is_empty then
+				create libs.make_empty
+libs_tpl := "[
+
+    "${LIB_NAME_VERSION}": { "type": "reference", "serviceable": false, "sha512": "" }
+]"
+
+				across
+					a_assemblie as ic
+				loop
+					l_name := ic.key
+					l_version := ic.item.version
+
+					libs.append (",%N")
+					libs.append (libs_tpl)
+					-- FIXME: maybe use proper JSON encoding, eventually the JSON library.
+					create l_versioned_name.make_from_string_general (l_name)
+					if l_version /= Void then
+						l_versioned_name.append_character ('/')
+						l_versioned_name.append (l_version)
+					end
+					libs.replace_substring_all ("${LIB_NAME_VERSION}", {CIL_GENERATOR}.to_json_string (l_versioned_name))
+				end
+			end
+
+			s.replace_substring_all ("${LIBRARIES}", libs)
+
+			create f.make_with_path (a_target_directory.extended (a_target_filename))
+			f.open_write
+			f.put_string (s)
+			f.close
 		end
 
 feature -- Metadata description
@@ -1327,10 +1620,9 @@ feature -- Metadata description
 		local
 			class_c: CLASS_C
 			name: STRING
-			l_type_token: INTEGER
+			l_type_token, tok: INTEGER
 			l_nested_parent_class: CLASS_C
 			l_nested_parent_class_token: INTEGER
-			l_uni_string: CLI_STRING
 			l_sig: MD_TYPE_SIGNATURE
 		do
 			class_c := class_type.associated_class
@@ -1350,17 +1642,14 @@ feature -- Metadata description
 				name := class_type.associated_class.external_class_name.twin
 				if attached {EXTERNAL_CLASS_C} class_c as l_external_class and then l_external_class.is_nested then
 					l_nested_parent_class := l_external_class.enclosing_class
-					create l_uni_string.make (l_nested_parent_class.types.first.full_il_type_name)
-					l_nested_parent_class_token := md_emit.define_type_ref (l_uni_string,
+					l_nested_parent_class_token := md_emit.define_type_ref (uni_string (l_nested_parent_class.types.first.full_il_type_name),
 						external_assembly_token (l_nested_parent_class.types.first))
-					l_uni_string.set_string (name.substring (
-						name.index_of ('+', 1) + 1, name.count))
-					l_type_token := md_emit.define_type_ref (l_uni_string,
+					l_type_token := md_emit.define_type_ref (uni_string (name.substring (
+						name.index_of ('+', 1) + 1, name.count)),
 						l_nested_parent_class_token)
 				else
-					create l_uni_string.make (name)
-					l_type_token := md_emit.define_type_ref (l_uni_string,
-						external_assembly_token (class_type))
+					tok := external_assembly_token (class_type)
+					l_type_token := md_emit.define_type_ref (uni_string (name), tok)
 				end
 				class_mapping.put (l_type_token, class_type.external_id)
 
@@ -1396,15 +1685,15 @@ feature -- Metadata description
 					update_parents (class_type, class_c, True)
 
 					l_attributes := {MD_TYPE_ATTRIBUTES}.Public |
-						{MD_TYPE_ATTRIBUTES}.Auto_layout |
-						{MD_TYPE_ATTRIBUTES}.Ansi_class
+									{MD_TYPE_ATTRIBUTES}.Auto_layout |
+									{MD_TYPE_ATTRIBUTES}.Ansi_class
 
 					if class_type.is_generated_as_single_type then
-						l_attributes := l_attributes ⦶
-							{MD_TYPE_ATTRIBUTES}.Is_class ⦶
-							{MD_TYPE_ATTRIBUTES}.Serializable ⦶
-							({MD_TYPE_ATTRIBUTES}.abstract ⊗ (- class_c.is_deferred.to_integer.to_integer_16)) ⦶
-							({MD_TYPE_ATTRIBUTES}.Sealed ⊗ (- (class_c.is_optimized_as_frozen or class_type.is_expanded).to_integer.to_integer_16))
+						l_attributes := l_attributes |
+							{MD_TYPE_ATTRIBUTES}.Is_class |
+							{MD_TYPE_ATTRIBUTES}.Serializable |
+							({MD_TYPE_ATTRIBUTES}.abstract & (- class_c.is_deferred.to_integer.to_integer_16)) |
+							({MD_TYPE_ATTRIBUTES}.Sealed & (- (class_c.is_optimized_as_frozen or class_type.is_expanded).to_integer.to_integer_16))
 						single_parent_mapping.put (single_inheritance_parent_id, class_type.implementation_id)
 					else
 						l_attributes := l_attributes |
@@ -1423,8 +1712,7 @@ feature -- Metadata description
 						is_debug_info_enabled and then
 						internal_dbg_documents.item (class_c.class_id) = Void
 					then
-						l_uni_string.set_string (class_c.file_name)
-						internal_dbg_documents.put (dbg_writer.define_document (l_uni_string,
+						internal_dbg_documents.put (dbg_writer.define_document (uni_string (class_c.file_name),
 							language_guid, vendor_guid, document_type_guid), class_c.class_id)
 					end
 				end
@@ -1456,13 +1744,13 @@ feature -- Metadata description
 				l_type_token := md_emit.define_type_ref (l_uni_string, assembly_token (class_type))
 			else
 				l_attributes :=
-					{MD_TYPE_ATTRIBUTES}.Public ⦶
-					{MD_TYPE_ATTRIBUTES}.Auto_layout ⦶
-					{MD_TYPE_ATTRIBUTES}.Ansi_class ⦶
-					{MD_TYPE_ATTRIBUTES}.Is_class ⦶
-					{MD_TYPE_ATTRIBUTES}.Serializable ⦶
-					({MD_TYPE_ATTRIBUTES}.Abstract ⊗ (- class_c.is_deferred.to_integer.to_integer_16)) ⦶
-					({MD_TYPE_ATTRIBUTES}.Sealed ⊗ (- (class_c.is_optimized_as_frozen or class_type.is_expanded).to_integer.to_integer_16))
+					{MD_TYPE_ATTRIBUTES}.Public |
+					{MD_TYPE_ATTRIBUTES}.Auto_layout |
+					{MD_TYPE_ATTRIBUTES}.Ansi_class |
+					{MD_TYPE_ATTRIBUTES}.Is_class |
+					{MD_TYPE_ATTRIBUTES}.Serializable |
+					({MD_TYPE_ATTRIBUTES}.Abstract & (- class_c.is_deferred.to_integer.to_integer_16)) |
+					({MD_TYPE_ATTRIBUTES}.Sealed & (- (class_c.is_optimized_as_frozen or class_type.is_expanded).to_integer.to_integer_16))
 
 				update_parents (class_type, class_c, False)
 				single_parent_mapping.put (single_inheritance_parent_id,
@@ -1485,8 +1773,7 @@ feature -- Metadata description
 					is_debug_info_enabled and then
 					internal_dbg_documents.item (class_c.class_id) = Void
 				then
-					l_uni_string.set_string (class_c.file_name)
-					internal_dbg_documents.put (dbg_writer.define_document (l_uni_string,
+					internal_dbg_documents.put (dbg_writer.define_document (uni_string (class_c.file_name),
 						language_guid, vendor_guid, document_type_guid), class_c.class_id)
 				end
 			end
@@ -1704,7 +1991,7 @@ feature -- Metadata description
 			l_class_type: CLASS_TYPE
 		do
 				-- Do not use `uni_string' as it might be used by `xxx_class_type_token'.
-			create l_uni_string.make (".ctor")
+			l_uni_string := dot_ctor_uni_string
 
 			l_class := class_type.associated_class
 
@@ -1790,7 +2077,7 @@ feature -- Metadata description
 					end
 						-- Do not use `uni_string' as it might be used by `xxx_class_type_token'.
 					l_method_body.put_opcode_mdtoken ({MD_OPCODES}.Stfld,
-						md_emit.define_member_ref (create {CLI_STRING}.make ("$$____type"),
+						md_emit.define_member_ref (uni_string ("$$____type"),
 						actual_class_type_token (l_class_type.implementation_id), l_field_sig))
 				end
 
@@ -2009,8 +2296,7 @@ feature -- Local saving
 				loop
 					l_sig.reset
 					set_signature_type (l_sig, l_locals.item.first, a_context_type)
-					uni_string.set_string (l_locals.item.second)
-					dbg_writer.define_local_variable (uni_string, i, l_sig)
+					dbg_writer.define_local_variable (uni_string (l_locals.item.second), i, l_sig)
 					l_locals.forth
 					i := i +1
 				end
@@ -2158,7 +2444,7 @@ feature -- Mapping between Eiffel compiler and generated tokens
 				l_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 				set_signature_type (l_sig, l_class_type.type, l_class_type)
 
-				Result := md_emit.define_member_ref (create {CLI_STRING}.make ("$$_invariant"),
+				Result := md_emit.define_member_ref (uni_string ("$$_invariant"),
 					actual_class_type_token (a_type_id), l_sig)
 				internal_invariant_token.put (Result, a_type_id)
 			end
@@ -2225,7 +2511,7 @@ feature -- Mapping between Eiffel compiler and generated tokens
 			class_token_valid: Result /= 0
 		end
 
-	define_assembly_reference (a_name, a_version, a_culture, a_key: READABLE_STRING_32): INTEGER
+	define_assembly_reference (a_name, a_version, a_culture: READABLE_STRING_32; a_key: detachable READABLE_STRING_32): INTEGER
 			-- Define an assembly reference matching given parameters
 		require
 			a_name_not_void: a_name /= Void
@@ -2236,7 +2522,7 @@ feature -- Mapping between Eiffel compiler and generated tokens
 			l_key_token: MD_PUBLIC_KEY_TOKEN
 		do
 			if defined_assemblies.has_key (a_name) then
-				Result := defined_assemblies.found_item
+				Result := defined_assemblies.found_item.token
 			else
 				if a_name.same_string_general ("mscorlib") and mscorlib_token > 0 then
 					Result := mscorlib_token
@@ -2259,16 +2545,20 @@ feature -- Mapping between Eiffel compiler and generated tokens
 						l_ass_info.set_revision_number (l_revision.to_natural_16)
 					end
 
-					if a_key /= Void and then not a_key.same_string_general ("null") then
+					if
+						a_key /= Void and then
+						not a_key.is_whitespace and then
+						not a_key.same_string_general ("null")
+					then
 						create l_key_token.make_from_string (a_key)
 					end
 
 						-- NOTE: cannot use `uni_string' buffer as current feature can
 						-- be used with other features that already uses it to define
 						-- some metadata.
-					Result := md_emit.define_assembly_ref (create {CLI_STRING}.make (a_name), l_ass_info, l_key_token)
+					Result := md_emit.define_assembly_ref (uni_string (a_name), l_ass_info, l_key_token)
 				end
-				defined_assemblies.put (Result, a_name)
+				defined_assemblies.put ([Result, a_version], a_name)
 			end
 		ensure
 			is_token_defined: Result /= 0
@@ -2303,12 +2593,15 @@ feature -- Mapping between Eiffel compiler and generated tokens
 					class_module := il_code_generator.il_module_for_class (class_c)
 					if class_module = Current then
 						Result := md_emit.define_type (
-							class_data_name,
-							{MD_TYPE_ATTRIBUTES}.auto_class | {MD_TYPE_ATTRIBUTES}.auto_layout |
-							{MD_TYPE_ATTRIBUTES}.is_class | {MD_TYPE_ATTRIBUTES}.public |
-							{MD_TYPE_ATTRIBUTES}.sealed,
-							object_type_token,
-							Void)
+								class_data_name,
+								{MD_TYPE_ATTRIBUTES}.auto_class |
+								{MD_TYPE_ATTRIBUTES}.auto_layout |
+								{MD_TYPE_ATTRIBUTES}.is_class |
+								{MD_TYPE_ATTRIBUTES}.public |
+								{MD_TYPE_ATTRIBUTES}.sealed,
+								object_type_token,
+								Void
+							)
 					else
 						Result := md_emit.define_type_ref (class_data_name, module_reference_token (class_module))
 					end
@@ -2593,13 +2886,10 @@ feature -- Mapping between Eiffel compiler and generated tokens
 		require
 			is_generated: is_generated
 			in_debug_mode: is_debug_info_enabled
-		local
-			l_string: CLI_STRING
 		do
 			Result := internal_dbg_documents.item (a_class_id)
 			if Result = Void and then attached system.class_of_id (a_class_id) as l_class then
-				create l_string.make (l_class.file_name)
-				Result := dbg_writer.define_document (l_string, language_guid,
+				Result := dbg_writer.define_document (uni_string (l_class.file_name), language_guid,
 					vendor_guid, document_type_guid)
 				internal_dbg_documents.put (Result, a_class_id)
 			end
@@ -2613,13 +2903,10 @@ feature -- Mapping between Eiffel compiler and generated tokens
 			attached_path: a_path /= Void
 			is_generated: is_generated
 			in_debug_mode: is_debug_info_enabled
-		local
-			l_string: CLI_STRING
 		do
 			Result := internal_dbg_pragma_documents.item (a_path)
 			if Result = Void then
-				create l_string.make (a_path)
-				Result := dbg_writer.define_document (l_string, language_guid,
+				Result := dbg_writer.define_document (uni_string (a_path), language_guid,
 					vendor_guid, document_type_guid)
 				internal_dbg_pragma_documents.put (Result, a_path)
 			end
@@ -2880,12 +3167,32 @@ feature -- Mapping between Eiffel compiler and generated tokens
 			is_generated: is_generated
 			a_module_not_void: a_module /= Void
 			a_module_not_current: a_module /= Current
+		local
+			l_ass_info: MD_ASSEMBLY_INFO
+			l_version: VERSION
 		do
 			Result := internal_module_references.item (a_module)
 			if Result = 0 then
-					-- ModuleRef token has not yet computed.
-				Result := md_emit.define_module_ref (create {CLI_STRING}.make (a_module.module_name))
-				internal_module_references.put (Result, a_module)
+				if is_using_multi_assemblies then
+						-- AssemblyRef token has not yet been computed.
+					create l_version
+					if attached system.msil_version as l_msil_version then
+						l_version.set_version (l_msil_version)
+					else
+						l_version.set_version ("1.0.0.0") -- Default version.
+					end
+					l_ass_info := md_factory.assembly_info
+					l_ass_info.set_major_version (l_version.major.to_natural_16)
+					l_ass_info.set_minor_version (l_version.minor.to_natural_16)
+					l_ass_info.set_build_number (l_version.build.to_natural_16)
+					l_ass_info.set_revision_number (l_version.revision.to_natural_16)
+					Result := define_assembly_reference (a_module.module_name, system.msil_version, "", Void)
+					internal_module_references.put (Result, a_module)
+				else
+						-- ModuleRef token has not yet been computed.
+					Result := md_emit.define_module_ref (uni_string (a_module.module_name_with_extension))
+					internal_module_references.put (Result, a_module)
+				end
 			end
 		end
 
@@ -2927,7 +3234,7 @@ feature -- Mapping between Eiffel compiler and generated tokens
 				else
 					if attached {EXTERNAL_CLASS_C} a_class_type.associated_class as l_external_class then
 							-- When it is an XML represented external class.
-						l_assembly := l_external_class.lace_class.assembly
+						l_assembly := if attached l_external_class.lace_class.public_assembly as l_public_assembly then l_public_assembly else l_external_class.lace_class.assembly end
 						l_name := l_assembly.assembly_name
 						l_version_string := l_assembly.assembly_version
 						l_culture := l_assembly.assembly_culture
@@ -2965,7 +3272,7 @@ feature -- Mapping between Eiffel compiler and generated tokens
 				(is_used_as_external implies internal_assemblies.item (a_class_type.external_id) /= 0)
 		end
 
-	defined_assemblies: STRING_TABLE [INTEGER]
+	defined_assemblies: STRING_TABLE [TUPLE [token: INTEGER; version: READABLE_STRING_GENERAL]]
 			-- In order to avoid calling `define_assembly_ref' twice on same assemblies.
 
 feature {NONE} -- Once per modules being generated.
@@ -3011,6 +3318,7 @@ feature {NONE} -- Once per modules being generated.
 			l_sig: like method_sig
 			l_meth_token: INTEGER
 			l_gen: like il_code_generator
+			l_dot_ctor_uni_string: like uni_string
 		do
 			l_gen := il_code_generator
 			class_mapping.put (ise_type_token, l_gen.runtime_type_id)
@@ -3041,27 +3349,28 @@ feature {NONE} -- Once per modules being generated.
 				Assertion_level_enum_class_name)
 
 			l_sig := default_sig
-			uni_string.set_string (".ctor")
 
-			l_meth_token := md_emit.define_member_ref (uni_string, ise_type_token, l_sig)
+			l_dot_ctor_uni_string := dot_ctor_uni_string
+
+			l_meth_token := md_emit.define_member_ref (l_dot_ctor_uni_string, ise_type_token, l_sig)
 			internal_constructor_token.put (l_meth_token, l_gen.runtime_type_id)
 
-			l_meth_token := md_emit.define_member_ref (uni_string, ise_class_type_token, l_sig)
+			l_meth_token := md_emit.define_member_ref (l_dot_ctor_uni_string, ise_class_type_token, l_sig)
 			internal_constructor_token.put (l_meth_token, l_gen.class_type_id)
 
-			l_meth_token := md_emit.define_member_ref (uni_string, ise_basic_type_token, l_sig)
+			l_meth_token := md_emit.define_member_ref (l_dot_ctor_uni_string, ise_basic_type_token, l_sig)
 			internal_constructor_token.put (l_meth_token, l_gen.basic_type_id)
 
-			l_meth_token := md_emit.define_member_ref (uni_string, ise_generic_type_token, l_sig)
+			l_meth_token := md_emit.define_member_ref (l_dot_ctor_uni_string, ise_generic_type_token, l_sig)
 			internal_constructor_token.put (l_meth_token, l_gen.generic_type_id)
 
-			l_meth_token := md_emit.define_member_ref (uni_string, ise_tuple_type_token, l_sig)
+			l_meth_token := md_emit.define_member_ref (l_dot_ctor_uni_string, ise_tuple_type_token, l_sig)
 			internal_constructor_token.put (l_meth_token, l_gen.tuple_type_id)
 
-			l_meth_token := md_emit.define_member_ref (uni_string, ise_formal_type_token, l_sig)
+			l_meth_token := md_emit.define_member_ref (l_dot_ctor_uni_string, ise_formal_type_token, l_sig)
 			internal_constructor_token.put (l_meth_token, l_gen.formal_type_id)
 
-			l_meth_token := md_emit.define_member_ref (uni_string, ise_none_type_token, l_sig)
+			l_meth_token := md_emit.define_member_ref (l_dot_ctor_uni_string, ise_none_type_token, l_sig)
 			internal_constructor_token.put (l_meth_token, l_gen.none_type_id)
 		ensure
 			inserted:
@@ -3113,7 +3422,7 @@ feature {NONE} -- Once per modules being generated.
 		require
 			is_generated: is_generated
 		do
-			c_module_token := md_emit.define_module_ref (create {CLI_STRING}.make (c_module_name))
+			c_module_token := md_emit.define_module_ref (uni_string (c_module_name))
 		end
 
 	compute_mscorlib_token
@@ -3124,32 +3433,35 @@ feature {NONE} -- Once per modules being generated.
 			system_object_compiled: System.system_object_class.is_compiled
 		local
 			l_ass_info: MD_ASSEMBLY_INFO
---			l_pub_key: MD_PUBLIC_KEY_TOKEN
-			l_mscorlib: ASSEMBLY_I
+			l_system_runtime: ASSEMBLY_I
 			l_version: VERSION
 		do
+				-- WORKAROUND:
 				-- To compute it, we simply take the data from `System.Object'. That way our
 				-- code is automatically using the version of `mscorlib' that was specified
 				-- in the Ace file.
-			l_mscorlib := system.system_object_class.assembly
+
+				-- TODO extract code.
+			l_system_runtime := if attached system.system_object_class.public_assembly as l_assembly then l_assembly else system.system_object_class.assembly end
+			if l_system_runtime = Void then
+					-- TODO: get assembly using "System.Runtime"
+			end
 
 			create l_version
 			check
-				version_valid: l_version.is_version_valid (l_mscorlib.assembly_version)
+				version_valid: l_version.is_version_valid (l_system_runtime.assembly_version)
 			end
 
-			l_version.set_version (l_mscorlib.assembly_version)
+			l_version.set_version (l_system_runtime.assembly_version)
 			l_ass_info := md_factory.assembly_info
 			l_ass_info.set_major_version (l_version.major.to_natural_16)
 			l_ass_info.set_minor_version (l_version.minor.to_natural_16)
 			l_ass_info.set_build_number (l_version.build.to_natural_16)
 			l_ass_info.set_revision_number (l_version.revision.to_natural_16)
 
---			create l_pub_key.make_from_string (l_mscorlib.assembly_public_key_token)
-			mscorlib_token := define_assembly_reference (l_mscorlib.assembly_name, l_ass_info.string, "", l_mscorlib.assembly_public_key_token)
+			mscorlib_token := define_assembly_reference (l_system_runtime.name, l_ass_info.string, "", l_system_runtime.assembly_public_key_token)
 
-			type_handle_class_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (Type_handle_class_name), mscorlib_token)
+			type_handle_class_token := md_emit.define_type_ref (uni_string (Type_handle_class_name), mscorlib_token)
 		end
 
 	compute_mscorlib_type_tokens
@@ -3168,45 +3480,34 @@ feature {NONE} -- Once per modules being generated.
 			l_debugger_step_through_token: INTEGER
 			l_debugger_hidden_token: INTEGER
 			l_non_serialized_attribute_token: INTEGER
+			l_dot_ctor_uni_string: like uni_string
 		do
-			object_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.Object"), mscorlib_token)
-			value_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.ValueType"), mscorlib_token)
-			runtime_type_handle_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (type_handle_class_name), mscorlib_token)
-			math_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.Math"), mscorlib_token)
-			real_32_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.Single"), mscorlib_token)
-			real_64_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.Double"), mscorlib_token)
-			char_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.Char"), mscorlib_token)
-			string_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.String"), mscorlib_token)
-			system_exception_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.Exception"), mscorlib_token)
-			l_debuggable_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.Diagnostics.DebuggableAttribute"), mscorlib_token)
-			l_cls_compliant_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.CLSCompliantAttribute"), mscorlib_token)
-			l_debugger_step_through_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.Diagnostics.DebuggerHiddenAttribute"),
+			object_type_token := md_emit.define_type_ref (uni_string ("System.Object"), mscorlib_token)
+			value_type_token := md_emit.define_type_ref (uni_string ("System.ValueType"), mscorlib_token)
+			runtime_type_handle_token := md_emit.define_type_ref (uni_string (type_handle_class_name), mscorlib_token)
+			math_type_token := md_emit.define_type_ref (uni_string ("System.Math"), mscorlib_token)
+			real_32_type_token := md_emit.define_type_ref (uni_string ("System.Single"), mscorlib_token)
+			real_64_type_token := md_emit.define_type_ref (uni_string ("System.Double"), mscorlib_token)
+			char_type_token := md_emit.define_type_ref (uni_string ("System.Char"), mscorlib_token)
+			string_type_token := md_emit.define_type_ref (uni_string ("System.String"), mscorlib_token)
+			system_exception_token := md_emit.define_type_ref (uni_string ("System.Exception"), mscorlib_token)
+			l_debuggable_token := md_emit.define_type_ref (uni_string ("System.Diagnostics.DebuggableAttribute"), mscorlib_token)
+			l_cls_compliant_token := md_emit.define_type_ref (uni_string ("System.CLSCompliantAttribute"), mscorlib_token)
+			l_debugger_step_through_token := md_emit.define_type_ref (uni_string ("System.Diagnostics.DebuggerHiddenAttribute"),
 				mscorlib_token)
-			l_debugger_hidden_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.Diagnostics.DebuggerStepThroughAttribute"),
+			l_debugger_hidden_token := md_emit.define_type_ref (uni_string ("System.Diagnostics.DebuggerStepThroughAttribute"),
 				mscorlib_token)
-			l_com_visible_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make ("System.Runtime.InteropServices.ComVisibleAttribute"),
+			l_com_visible_token := md_emit.define_type_ref (uni_string ("System.Runtime.InteropServices.ComVisibleAttribute"),
 				mscorlib_token)
-			l_non_serialized_attribute_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (non_serialized_attribute_class_name), mscorlib_token)
+			l_non_serialized_attribute_token := md_emit.define_type_ref (uni_string (non_serialized_attribute_class_name),
+				mscorlib_token)
 
-			uni_string.set_string (".ctor")
 
 				-- Define `.ctor' from `System.CLSCompliantAttribute' and
 				-- `System.Runtime.InteropServices.ComVisibleAttribute'.
+
+			l_dot_ctor_uni_string := dot_ctor_uni_string
+
 			l_sig := method_sig
 			l_sig.reset
 			l_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.Has_current)
@@ -3214,10 +3515,10 @@ feature {NONE} -- Once per modules being generated.
 			l_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 			l_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_boolean, 0)
 
-			cls_compliant_ctor_token := md_emit.define_member_ref (uni_string,
+			cls_compliant_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_cls_compliant_token, l_sig)
 
-			com_visible_ctor_token := md_emit.define_member_ref (uni_string,
+			com_visible_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_com_visible_token, l_sig)
 
 				-- Define `.ctor' from `System.Diagnostics.DebuggableAttribute'.
@@ -3228,7 +3529,7 @@ feature {NONE} -- Once per modules being generated.
 			l_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_boolean, 0)
 			l_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_boolean, 0)
 
-			debuggable_ctor_token := md_emit.define_member_ref (uni_string,
+			debuggable_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_debuggable_token, l_sig)
 
 			l_sig.reset
@@ -3236,14 +3537,14 @@ feature {NONE} -- Once per modules being generated.
 			l_sig.set_parameter_count (0)
 			l_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 
-			debugger_hidden_ctor_token := md_emit.define_member_ref (uni_string,
+			debugger_hidden_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_debugger_hidden_token, l_sig)
 
-			debugger_step_through_ctor_token := md_emit.define_member_ref (uni_string,
+			debugger_step_through_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_debugger_step_through_token, l_sig)
 
 				-- Get token for the .ctor of `System.NonSerializedAttribute'
-			dotnet_non_serialized_attr_ctor_token := md_emit.define_member_ref (uni_string,
+			dotnet_non_serialized_attr_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_non_serialized_attribute_token, l_sig)
 		ensure
 			object_type_token_set: object_type_token /= 0
@@ -3267,8 +3568,8 @@ feature {NONE} -- Once per modules being generated.
 			l_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_r8, 0)
 			l_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_r8, 0)
 			l_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_r8, 0)
-			uni_string.set_string ("Pow")
-			power_method_token := md_emit.define_member_ref (uni_string, math_type_token, l_sig)
+
+			power_method_token := md_emit.define_member_ref (uni_string ("Pow"), math_type_token, l_sig)
 		ensure
 			power_method_token_set: power_method_token /= 0
 		end
@@ -3285,15 +3586,13 @@ feature {NONE} -- Once per modules being generated.
 			l_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.Has_current)
 			l_sig.set_parameter_count (0)
 			l_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_string, 0)
-			to_string_method_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("ToString"), object_type_token, l_sig)
+			to_string_method_token := md_emit.define_member_ref (uni_string ("ToString"), object_type_token, l_sig)
 
 			l_sig.reset
 			l_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.Has_current)
 			l_sig.set_parameter_count (0)
 			l_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_object, 0)
-			memberwise_clone_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("MemberwiseClone"), object_type_token, l_sig)
+			memberwise_clone_token := md_emit.define_member_ref (uni_string ("MemberwiseClone"), object_type_token, l_sig)
 		ensure
 			to_string_method_token: to_string_method_token /= 0
 		end
@@ -3313,6 +3612,7 @@ feature {NONE} -- Once per modules being generated.
 			l_ise_eiffel_consumable_attr_token: INTEGER
 			l_ise_eiffel_version_attr_token: INTEGER
 			l_system_type_token: INTEGER
+			l_dot_ctor_uni_string: like uni_string
 		do
 				-- Define `ise_runtime_token'.
 			l_ass_info := md_factory.assembly_info
@@ -3334,17 +3634,19 @@ feature {NONE} -- Once per modules being generated.
 				)
 
 			ise_runtime_type_token := md_emit.define_type_ref (
-					create {CLI_STRING}.make (runtime_class_name),
+					uni_string (runtime_class_name),
 					ise_runtime_token
 				)
 
 			ise_exception_manager_type_token := md_emit.define_type_ref (
-					create {CLI_STRING}.make (exception_manager_interface_name),
+					uni_string (exception_manager_interface_name),
 					ise_runtime_token
 				)
 
 			ise_rt_extension_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (rt_extension_interface_name), ise_runtime_token)
+					uni_string (rt_extension_interface_name),
+					ise_runtime_token
+				)
 
 				-- Define `ise_set_last_exception_token'.
 			l_meth_sig := method_sig
@@ -3355,7 +3657,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_class, system_exception_token)
 
 			ise_set_last_exception_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("set_last_exception"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("set_last_exception"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_get_last_exception_token'.
 			l_meth_sig.reset
@@ -3364,7 +3666,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_class, system_exception_token)
 
 			ise_get_last_exception_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("get_last_exception"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("get_last_exception"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_restore_last_exception_token'.
 			l_meth_sig.reset
@@ -3374,7 +3676,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_class, system_exception_token)
 
 			ise_restore_last_exception_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("restore_last_exception"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("restore_last_exception"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_raise_code_token'.
 			l_meth_sig.reset
@@ -3385,7 +3687,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.element_type_string, 0)
 
 			ise_raise_code_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("raise_code"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("raise_code"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_raise_old_token'.
 			l_meth_sig.reset
@@ -3395,7 +3697,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_class, system_exception_token)
 
 			ise_raise_old_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("raise_old"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("raise_old"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_enter_rescue_token'.
 			l_meth_sig.reset
@@ -3404,7 +3706,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 
 			ise_enter_rescue_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("enter_rescue"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("enter_rescue"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_set_rescue_level_token'.
 			l_meth_sig.reset
@@ -3414,7 +3716,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_i4, 0)
 
 			ise_set_rescue_level_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("set_rescue_level"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("set_rescue_level"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_get_rescue_level_token'.
 			l_meth_sig.reset
@@ -3423,7 +3725,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_i4, 0)
 
 			ise_get_rescue_level_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("get_rescue_level"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("get_rescue_level"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_rethrow_token'.
 			l_meth_sig.reset
@@ -3433,7 +3735,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_boolean, 0)
 
 			ise_rethrow_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("rethrow"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("rethrow"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_in_assertion_token'.
 			l_meth_sig.reset
@@ -3442,7 +3744,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_boolean, 0)
 
 			ise_in_assertion_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("in_assertion"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("in_assertion"), ise_runtime_type_token, l_meth_sig)
 
 			l_meth_sig.reset
 			l_meth_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.Default_sig)
@@ -3451,7 +3753,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_boolean, 0)
 
 			ise_set_in_assertion_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("set_in_assertion"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("set_in_assertion"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_in_precondition_token'.
 			l_meth_sig.reset
@@ -3460,7 +3762,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_boolean, 0)
 
 			ise_in_precondition_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("in_precondition"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("in_precondition"), ise_runtime_type_token, l_meth_sig)
 
 			l_meth_sig.reset
 			l_meth_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.Default_sig)
@@ -3469,7 +3771,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_boolean, 0)
 
 			ise_set_in_precondition_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("set_in_precondition"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("set_in_precondition"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_assertion_tag_token'
 			l_sig := field_sig
@@ -3477,39 +3779,39 @@ feature {NONE} -- Once per modules being generated.
 			l_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_string, 0)
 
 			ise_assertion_tag_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("assertion_tag"), ise_runtime_type_token, l_sig)
+				uni_string ("assertion_tag"), ise_runtime_type_token, l_sig)
 
 				-- Define `ise_**_type_token'.
 			ise_eiffel_type_info_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (Type_info_class_name), ise_runtime_token)
+				uni_string (Type_info_class_name), ise_runtime_token)
 			ise_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (Type_class_name), ise_runtime_token)
+				uni_string (Type_class_name), ise_runtime_token)
 			ise_class_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (Class_type_class_name), ise_runtime_token)
+				uni_string (Class_type_class_name), ise_runtime_token)
 			ise_generic_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (generic_type_class_name), ise_runtime_token)
+				uni_string (generic_type_class_name), ise_runtime_token)
 			ise_tuple_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (tuple_type_class_name), ise_runtime_token)
+				uni_string (tuple_type_class_name), ise_runtime_token)
 			ise_formal_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (Formal_type_class_name), ise_runtime_token)
+				uni_string (Formal_type_class_name), ise_runtime_token)
 			ise_none_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (None_type_class_name), ise_runtime_token)
+				uni_string (None_type_class_name), ise_runtime_token)
 			ise_basic_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (basic_type_class_name), ise_runtime_token)
+				uni_string (basic_type_class_name), ise_runtime_token)
 			l_ise_eiffel_name_attr_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (eiffel_name_attribute), ise_runtime_token)
+				uni_string (eiffel_name_attribute), ise_runtime_token)
 			l_ise_eiffel_version_attr_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (eiffel_version_attribute), ise_runtime_token)
+				uni_string (eiffel_version_attribute), ise_runtime_token)
 			l_ise_type_feature_attr_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (type_feature_attribute), ise_runtime_token)
+				uni_string (type_feature_attribute), ise_runtime_token)
 			l_ise_assertion_level_attr_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (assertion_level_class_name_attribute), ise_runtime_token)
+				uni_string (assertion_level_class_name_attribute), ise_runtime_token)
 			l_ise_interface_type_attr_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (interface_type_class_name_attribute), ise_runtime_token)
+				uni_string (interface_type_class_name_attribute), ise_runtime_token)
 			l_ise_eiffel_consumable_attr_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (eiffel_consumable_attribute), ise_runtime_token)
+				uni_string (eiffel_consumable_attribute), ise_runtime_token)
 			ise_generic_conformance_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (Generic_conformance_class_name), ise_runtime_token)
+				uni_string (Generic_conformance_class_name), ise_runtime_token)
 
 				-- Define `ise_get_type_token'.
 			l_meth_sig.reset
@@ -3519,7 +3821,7 @@ feature {NONE} -- Once per modules being generated.
 				ise_generic_type_token)
 
 			ise_get_type_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("____type"),
+				uni_string ("____type"),
 				ise_eiffel_type_info_type_token, l_meth_sig)
 
 				-- Define `ise_check_invariant_token'.
@@ -3531,7 +3833,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_boolean, 0)
 
 			ise_check_invariant_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("check_invariant"), ise_runtime_type_token, l_meth_sig)
+				uni_string ("check_invariant"), ise_runtime_type_token, l_meth_sig)
 
 				-- Define `ise_is_invariant_checked_for'.
 			l_meth_sig.reset
@@ -3541,12 +3843,12 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_valuetype,
 				runtime_type_handle_token)
 			ise_is_invariant_checked_for_token := md_emit.define_member_ref (
-				create {CLI_STRING}.make ("is_invariant_checked_for"),
+				uni_string ("is_invariant_checked_for"),
 				ise_runtime_type_token, l_meth_sig)
 
 				-- Get token for `System.Type'
 			l_system_type_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (system_type_class_name), mscorlib_token)
+				uni_string (system_type_class_name), mscorlib_token)
 
 				-- Define constructors of custom attribute class that keeps Eiffel
 				-- name classes in their Eiffel formatting. The first one is for non-generic
@@ -3557,14 +3859,15 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_string, 0)
 
-			uni_string.set_string (".ctor")
-			ise_eiffel_name_attr_ctor_token := md_emit.define_member_ref (uni_string,
+			l_dot_ctor_uni_string := dot_ctor_uni_string
+
+			ise_eiffel_name_attr_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_ise_eiffel_name_attr_token, l_meth_sig)
 
-			ise_type_feature_attr_ctor_token := md_emit.define_member_ref (uni_string,
+			ise_type_feature_attr_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_ise_type_feature_attr_token, l_meth_sig)
 
-			ise_eiffel_version_attr_ctor_token := md_emit.define_member_ref (uni_string,
+			ise_eiffel_version_attr_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_ise_eiffel_version_attr_token, l_meth_sig)
 
 			l_meth_sig.reset
@@ -3576,8 +3879,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_class,
 				l_system_type_token)
 
-			uni_string.set_string (".ctor")
-			ise_eiffel_name_attr_generic_ctor_token := md_emit.define_member_ref (uni_string,
+			ise_eiffel_name_attr_generic_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_ise_eiffel_name_attr_token, l_meth_sig)
 
 				-- Definition of `.ctor' for CLASS_TYPE_MARK_ATTRIBUTE
@@ -3587,15 +3889,15 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_valuetype,
 				md_emit.define_type_ref
-					(create {CLI_STRING}.make (Class_type_mark_enum_class_name), ise_runtime_token))
+					(uni_string (Class_type_mark_enum_class_name), ise_runtime_token))
 
 			ise_eiffel_class_type_mark_attr_ctor_token := md_emit.define_member_ref
-				(uni_string, md_emit.define_type_ref
-					(create {CLI_STRING}.make (class_type_mark_attribute_name), ise_runtime_token), l_meth_sig)
+				(l_dot_ctor_uni_string, md_emit.define_type_ref
+					(uni_string (class_type_mark_attribute_name), ise_runtime_token), l_meth_sig)
 
 				-- Definition of `.ctor' for ASSERTION_LEVEL_ATTRIBUTE
 			ise_assertion_level_enum_token := md_emit.define_type_ref (
-				create {CLI_STRING}.make (Assertion_level_enum_class_name), ise_runtime_token)
+				uni_string (Assertion_level_enum_class_name), ise_runtime_token)
 
 			l_meth_sig.reset
 			l_meth_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.Has_current)
@@ -3606,8 +3908,9 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_valuetype,
 				ise_assertion_level_enum_token)
 
-			uni_string.set_string (".ctor")
-			ise_assertion_level_attr_ctor_token := md_emit.define_member_ref (uni_string,
+			l_dot_ctor_uni_string := dot_ctor_uni_string
+
+			ise_assertion_level_attr_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_ise_assertion_level_attr_token, l_meth_sig)
 
 				-- Definition of `.ctor' for CREATION_TYPE_ATTRIBUTE
@@ -3618,8 +3921,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_class,
 				l_system_type_token)
 
-			uni_string.set_string (".ctor")
-			ise_interface_type_attr_ctor_token := md_emit.define_member_ref (uni_string,
+			ise_interface_type_attr_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_ise_interface_type_attr_token, l_meth_sig)
 
 				-- Definition of `.ctor' for EIFFEL_CONSUMABLE_ATTRIBUTE
@@ -3629,8 +3931,7 @@ feature {NONE} -- Once per modules being generated.
 			l_meth_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 			l_meth_sig.set_type ({MD_SIGNATURE_CONSTANTS}.Element_type_boolean, 0)
 
-			uni_string.set_string (".ctor")
-			ise_eiffel_consumable_attr_ctor_token := md_emit.define_member_ref (uni_string,
+			ise_eiffel_consumable_attr_ctor_token := md_emit.define_member_ref (l_dot_ctor_uni_string,
 				l_ise_eiffel_consumable_attr_token, l_meth_sig)
 
 		end
@@ -3750,7 +4051,7 @@ feature {NONE} -- Cleaning
 			method_writer := Void
 			public_key := Void
 			single_parent_mapping := Void
-			uni_string := Void
+			reset_uni_string
 		end
 
 invariant
@@ -3761,24 +4062,24 @@ invariant
 	dll_or_console_valid: not is_assembly_module implies (is_dll and is_console_application)
 
 note
-	copyright:	"Copyright (c) 1984-2023, Eiffel Software"
+	copyright:	"Copyright (c) 1984-2024, Eiffel Software"
 	license:	"GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[
 			This file is part of Eiffel Software's Eiffel Development Environment.
-			
+
 			Eiffel Software's Eiffel Development Environment is free
 			software; you can redistribute it and/or modify it under
 			the terms of the GNU General Public License as published
 			by the Free Software Foundation, version 2 of the License
 			(available at the URL listed under "license" above).
-			
+
 			Eiffel Software's Eiffel Development Environment is
 			distributed in the hope that it will be useful, but
 			WITHOUT ANY WARRANTY; without even the implied warranty
 			of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 			See the GNU General Public License for more details.
-			
+
 			You should have received a copy of the GNU General Public
 			License along with Eiffel Software's Eiffel Development
 			Environment; if not, write to the Free Software Foundation,

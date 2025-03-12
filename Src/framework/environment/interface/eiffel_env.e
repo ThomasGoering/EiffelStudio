@@ -121,7 +121,7 @@ feature -- Access
 			not_result_is_empty: not Result.is_empty
 		end
 
-	copyright_year: STRING = "2023"
+	copyright_year: STRING = "2024"
 			-- Copyright year.
 
 feature -- Access
@@ -165,6 +165,7 @@ feature {NONE} -- Access
 				Result.extend (user_files_path)
 				Result.extend (hidden_files_path)
 				Result.extend (projects_data_path)
+				Result.extend (log_path)
 			else
 				create Result.make (0)
 			end
@@ -285,11 +286,9 @@ feature -- Status update
 			end
 
 				-- Initialize User specific precompiled libraries
-			init_precompile_directory (False)
-			if {PLATFORM}.is_windows then
-					-- We only initialize .NET precompiled libraries on Windows.
-				init_precompile_directory (True)
-			end
+				-- Note: for netcore, this is initialized on demand.
+			init_precompile_directory (False, Void)
+			init_precompile_directory (True, Void)
 
 				-- Check dotnet related settings
 			check_dotnet_environment
@@ -417,7 +416,7 @@ feature -- Status report
 
 feature -- Status setting
 
-	init_precompile_directory (a_is_dotnet: BOOLEAN)
+	init_precompile_directory (a_is_dotnet: BOOLEAN; a_clr_version: detachable READABLE_STRING_GENERAL)
 			-- If ISE_PRECOMP is not set, initialize user specific precompilation directory
 			-- taking into account `a_is_dotnet' to compute the path.
 		require
@@ -428,10 +427,12 @@ feature -- Status setting
 			l_source_file, l_target_file: detachable RAW_FILE
 			l_path: PATH
 			retried: BOOLEAN
+			s: STRING_8
+			fn: STRING_32
 		do
 			if not retried then
 					-- Get the path for the precompiled libraries
-				l_precompilation_path := precompilation_path (a_is_dotnet)
+				l_precompilation_path := precompilation_path (a_is_dotnet, a_clr_version)
 
 					-- Now if `l_precompilation_path' does not exist, we copy the content from
 					-- the installation directory.
@@ -439,7 +440,7 @@ feature -- Status setting
 				if not l_dir.exists then
 						-- Directory does not exist
 					safe_recursive_create_dir (l_precompilation_path)
-					l_installation_precompilation_path := installation_precompilation_path (a_is_dotnet)
+					l_installation_precompilation_path := installation_precompilation_path (a_is_dotnet, a_clr_version)
 					create l_dir.make_with_path (l_installation_precompilation_path)
 					if l_dir.exists and attached l_dir.entries as l_files then
 						from
@@ -458,6 +459,33 @@ feature -- Status setting
 									l_source_file.open_read
 									l_source_file.copy_to (l_target_file)
 									l_source_file.close
+									l_target_file.close
+								end
+							elseif
+								a_clr_version /= Void and then
+								l_files.item.has_extension ("tpl")
+							then
+									-- NOTE: for netcore, use template to create expected precompile lib.
+								fn := l_files.item.name
+								fn := fn.substring (1, fn.count - 4) -- Remove .tpl extension
+								l_path := l_precompilation_path.extended (fn)
+								create l_target_file.make_with_path (l_path)
+								if not l_target_file.exists then
+									create l_source_file.make_with_path (l_installation_precompilation_path.extended_path (l_files.item))
+									create s.make (l_source_file.count)
+									l_source_file.open_read
+									from
+										l_source_file.start
+									until
+										l_source_file.end_of_file or l_source_file.exhausted
+									loop
+										l_source_file.read_stream (512)
+										s.append (l_source_file.last_string)
+									end
+									l_source_file.close
+									s.replace_substring_all ("${MSIL_CLR_VERSION}", {UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (a_clr_version))
+									l_target_file.open_write
+									l_target_file.put_string (s)
 									l_target_file.close
 								end
 							end
@@ -485,14 +513,24 @@ feature -- Status setting
 			retry
 		end
 
-	set_precompile (a_is_dotnet: BOOLEAN)
+	set_precompile (a_is_dotnet: BOOLEAN; a_clr_version: detachable READABLE_STRING_GENERAL)
 			-- Set up the ISE_PRECOMP environment variable, depending on `a_is_dotnet'.
 		require
 			is_valid_environment: is_valid_environment
+		local
+			l_clr_version: detachable READABLE_STRING_GENERAL
 		do
+				-- For a dotnet project, if the clr_version setting is empty, use the default version.
+			if a_is_dotnet and then (a_clr_version = Void or else a_clr_version.is_whitespace) then
+				l_clr_version := default_il_environment.default_version
+			else
+				l_clr_version := a_clr_version
+			end
+			init_precompile_directory (a_is_dotnet, l_clr_version)
+
 				-- Now we set the ISE_PRECOMP environment variable with the precompiled library path.
 				-- Note that if it was already set, the value stays the same.
-			set_environment (precompilation_path (a_is_dotnet).name, {EIFFEL_CONSTANTS}.ise_precomp_env)
+			set_environment (precompilation_path (a_is_dotnet, l_clr_version).name, {EIFFEL_CONSTANTS}.ise_precomp_env)
 		end
 
 feature {NONE} -- Helpers
@@ -690,7 +728,7 @@ feature -- Directories (top-level)
 			not_result_is_empty: not Result.is_empty
 		end
 
-	installation_precompilation_path (a_is_dotnet: BOOLEAN): PATH
+	installation_precompilation_path (a_is_dotnet: BOOLEAN; a_clr_version: detachable READABLE_STRING_GENERAL): PATH
 			-- Eiffel path where the ECFs are located in the installation directory.
 			-- With platform: $ISE_EIFFEL/precomp/spec/$ISE_PLATFORM
 			-- Without: /usr/share/eiffelstudio-MM.mm/precomp/spec/unix
@@ -702,19 +740,21 @@ feature -- Directories (top-level)
 			Result := shared_path.extended (precomp_name).extended (spec_name)
 			if a_is_dotnet then
 					-- Append '-dotnet' to platform name
-				create l_dn_name.make (eiffel_platform.count + 7)
+				create l_dn_name.make (eiffel_platform.count + 8)
 				l_dn_name.append_string_general (eiffel_platform)
 				l_dn_name.append_string_general ("-dotnet")
 				Result := Result.extended (l_dn_name)
+				if a_clr_version /= Void and then (create {IL_NETCORE_DETECTOR}).is_il_netcore (a_clr_version) then
+					Result := Result.extended ("netcore")
+				end
 			else
 				Result := Result.extended (eiffel_platform)
 			end
-
 		ensure
 			not_result_is_empty: not Result.is_empty
 		end
 
-	precompilation_path (a_is_dotnet: BOOLEAN): PATH
+	precompilation_path (a_is_dotnet: BOOLEAN; a_clr_version: detachable READABLE_STRING_GENERAL): PATH
 			-- Actual location of the precompiled libraries.
 			-- When ISE_PRECOMP is defined:
 			--   $ISE_PRECOMP
@@ -733,13 +773,24 @@ feature -- Directories (top-level)
 			l_value := get_environment_32 ({EIFFEL_CONSTANTS}.ise_precomp_env)
 			if l_value = Void or else l_value.is_empty then
 				if is_user_files_supported then
-					Result := user_files_path.extended (precomp_name).extended (spec_name)
+					Result := user_files_path.extended (precomp_name)
+					if not current_ec_name.same_string (default_ide_ec_name) then
+						Result := Result.appended ("-").appended (current_ec_name)
+					end
+					Result := Result.extended (spec_name)
 					if a_is_dotnet then
 							-- Append '-dotnet' to platform name
-						create l_dn_name.make (eiffel_platform.count + 7)
+						create l_dn_name.make (eiffel_platform.count + 8)
 						l_dn_name.append_string_general (eiffel_platform)
 						l_dn_name.append_string_general ("-dotnet")
 						Result := Result.extended (l_dn_name)
+						if a_clr_version /= Void and then (create {IL_NETCORE_DETECTOR}).is_il_netcore (a_clr_version) then
+							if attached default_il_environment.installed_runtime_info (a_clr_version) as irinf then
+								Result := Result.extended (irinf.runtime_version) --"netcore")
+							else
+								Result := Result.extended ( a_clr_version) --"netcore")
+							end
+						end
 					else
 						Result := Result.extended (eiffel_platform)
 					end
@@ -747,7 +798,7 @@ feature -- Directories (top-level)
 						-- No user file is specified, we use the installation
 						-- directory and if this is not writable, users will
 						-- get an error.
-					Result := installation_precompilation_path (a_is_dotnet)
+					Result := installation_precompilation_path (a_is_dotnet, a_clr_version)
 				end
 			else
 				create Result.make_from_string (l_value)
@@ -833,15 +884,20 @@ feature  -- Directories (dotnet)
 		require
 			is_valid_environment: is_valid_environment
 		once
-			if is_user_files_supported then
-				Result := user_files_path
+			if attached get_environment_32 (ise_dotnet_assemblies_path_env) as l_path then
+				create Result.make_from_string (l_path)
 			else
-					-- No user file is specified, we use the installation
-					-- directory and if this is not writable, users will
-					-- get an error.
-				Result := install_path
+				if is_user_files_supported then
+					Result := user_files_path
+				else
+						-- No user file is specified, we use the installation
+						-- directory and if this is not writable, users will
+						-- get an error.
+					Result := install_path
+				end
+				Result := Result.extended (dotnet_name).extended (assemblies_name)
 			end
-			Result := Result.extended (dotnet_name).extended (assemblies_name)
+
 			if use_json_dotnet_md_cache then
 				Result := Result.extended ("json")
 			end
@@ -874,18 +930,21 @@ feature -- Cache settings
 	check_dotnet_environment
 			-- Check .Net environment
 		do
+				-- The Eiffel compiler always uses the emdc consumer on non Windows machine
+				-- And on Windows, it uses by default the emdc consumer (i.e executable instead of the COM consumer on Windows)
+				--  unless ISE_EMDC is set to "false" or "no".
 			if
 				not {PLATFORM}.is_windows
 			then
 					-- On non Windows platform (Linux, ...), always use "emdc".
 				use_emdc_consumer := True
 			elseif
-				attached get_environment_32 ("ISE_EMDC") as v1 and then v1.count > 0 and then
-				not (v1.is_case_insensitive_equal ("false") or v1.is_case_insensitive_equal ("no"))
+				attached get_environment_32 (ise_emdc_env) as v1 and then v1.count > 0 and then
+				(v1.is_case_insensitive_equal ("false") or v1.is_case_insensitive_equal ("no"))
 			then
-				use_emdc_consumer := True
-			else
 				use_emdc_consumer := False
+			else
+				use_emdc_consumer := True
 			end
 			update_use_json_dotnet_md_cache
 		end
@@ -899,7 +958,7 @@ feature -- Cache settings
 
 					-- unless ISE_EMDC_JSON is "false"
 				if
-					attached get_environment_32 ("ISE_EMDC_JSON") as v2 and then
+					attached get_environment_32 (ise_emdc_env + "_JSON") as v2 and then
 					v2.count > 0 and then
 					( v2.is_case_insensitive_equal ("false")
 					  or v2.is_case_insensitive_equal ("no")
@@ -925,9 +984,9 @@ feature -- Cache settings
 			use_emdc_consumer := b
 			if a_permanent then
 				if b then
-					environment.set_application_item ("ISE_EMDC", application_name, version_name, "true")
+					environment.set_application_item (ise_emdc_env, application_name, version_name, "true")
 				else
-					environment.set_application_item ("ISE_EMDC", application_name, version_name, "false")
+					environment.set_application_item (ise_emdc_env, application_name, version_name, "false")
 				end
 			end
 			update_use_json_dotnet_md_cache
@@ -940,9 +999,9 @@ feature -- Cache settings
 			use_json_dotnet_md_cache := b
 			if a_permanent then
 				if b then
-					environment.set_application_item ("ISE_EMDC_JSON", application_name, version_name, "true")
+					environment.set_application_item (ise_emdc_env + "_JSON", application_name, version_name, "true")
 				else
-					environment.set_application_item ("ISE_EMDC_JSON", application_name, version_name, "false")
+					environment.set_application_item (ise_emdc_env + "_JSON", application_name, version_name, "false")
 				end
 			end
 		end
@@ -1496,6 +1555,18 @@ feature -- Private Settings Directories
 			not_result_is_empty: not Result.is_empty
 		end
 
+	log_path: PATH
+			-- Path to log directory that EiffelStudio can use to store logs.
+			--| They are hidden by default to the user.
+		require
+			is_valid_environment: is_valid_environment
+			is_user_files_supported: is_user_files_supported
+		once
+			Result := hidden_files_path.extended ("log")
+		ensure
+			not_result_is_empty: not Result.is_empty
+		end
+
 feature -- User Directories
 
 	user_templates_path: PATH
@@ -1987,6 +2058,34 @@ feature -- Executable names
 			not_result_is_empty: not Result.is_empty
 		end
 
+	current_ec_name: STRING_32
+			-- Extension less executable name for the current compiler.
+			--| usually "ec" for the IDE, but sometime "ecb" when using the batch compiler.
+		local
+			p: PATH
+		once
+			create p.make_from_string ({EXECUTION_ENVIRONMENT}.arguments.command_name)
+			if attached p.entry as e then
+				p := e
+			end
+			Result := p.name
+			if attached p.extension as ext then
+				Result := Result.substring (1, Result.count - ext.count - 1)
+			end
+		end
+
+	default_ide_ec_name: STRING_32
+			-- Default IDE executable name of ec.
+			--| note:
+			--|	 default = ec
+			--|	 batch = ecb
+			--|  others ...
+		once
+			create Result.make (6)
+			Result.append ({STRING_32} "ec")
+			Result.append_string_general (release_suffix)
+		end
+
 	finish_freezing_script: STRING_32
 			-- Name of post-eiffel compilation processing to launch C code.
 		once
@@ -2427,11 +2526,15 @@ feature -- Preferences
 		do
 			l_prod_version_name := product_name_for_version (a_version_name)
 			if {PLATFORM}.is_windows then
-				create Result.make_from_string_general ({STRING_32} "HKEY_CURRENT_USER\SOFTWARE\ISE\" + l_prod_version_name + "\" + application_name + "\Preferences")
+				create Result.make_from_string_general ({STRING_32} "HKEY_CURRENT_USER\SOFTWARE\ISE\")
 				if is_workbench then
-					Result.append_character ('_')
 					Result.append_string_general (wkbench_suffix)
+					Result.append_character ('\')
 				end
+				Result.append_string_general (l_prod_version_name)
+				Result.append_character ('\')
+				Result.append_string_general (application_name)
+				Result.append_string_general ("\Preferences")
 			else
 				p := hidden_files_path_for_version (version_name, a_create_dir)
 				p := p.extended (l_prod_version_name).appended_with_extension ("rc")
@@ -2479,9 +2582,8 @@ feature -- Existing installations
 				loop
 					s := ic
 					if s.is_valid_as_string_8 then
-
+						Result.extend (s.to_string_8)
 					end
-					Result.extend (s.to_string_8)
 				end
 			else
 				create Result.make (0)
@@ -2498,17 +2600,21 @@ feature -- Existing installations
 		once
 			lst := installed_product_version_names
 			create Result.make (lst.count)
-			l_prod_name := product_name
+			l_prod_name := product_name + "_"
 			across
 				lst as ic
 			loop
 				s := ic
 				if s.starts_with (l_prod_name) then
-					v := s.tail (s.count - l_prod_name.count - 1)
+					v := s.tail (s.count - l_prod_name.count)
 				else
 					v := s
 				end
-				Result.force (v)
+				if v.is_empty or else not v[1].is_digit then
+						-- Expecting major.minor value  (i.e:  23.06...)
+				else
+					Result.force (v)
+				end
 			end
 		end
 

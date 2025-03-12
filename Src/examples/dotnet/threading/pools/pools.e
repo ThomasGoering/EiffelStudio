@@ -45,7 +45,6 @@ feature -- Basic Operation
 			-- The callback method's signature MUST match that of a WAIT_CALLBACK 
 			-- delegate (it takes an SYSTEM_OBJECT parameter and returns void)
 		local
-			l_state: AUTO_RESET_EVENT
 			return: BOOLEAN
 		do
 			io.put_string ("WorkItem thread: Performing asynchronous operation.%N")
@@ -54,8 +53,7 @@ feature -- Basic Operation
 			{SYSTEM_THREAD}.sleep (5000) -- Sleep for 5 seconds to simulate doing work
 
 			-- Signal that the async operation is now complete.
-			l_state ?= a_state
-			if l_state /= Void then
+			if attached {AUTO_RESET_EVENT} a_state as l_state then
 				return := l_state.set
 			end
 		end

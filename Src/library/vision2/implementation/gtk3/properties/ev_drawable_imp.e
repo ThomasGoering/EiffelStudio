@@ -502,14 +502,18 @@ feature -- Drawing operations
 				if internal_font_imp /= Void then
 					{PANGO}.layout_set_font_description (a_pango_layout, internal_font_imp.font_description)
 				end
-
 				if a_width >= 0 then
 						-- We need to perform ellipsizing on text if available, otherwise we clip.
 					l_ellipsize_symbol := pango_layout_set_ellipsize_symbol
-					{PANGO}.layout_set_ellipsize_call (l_ellipsize_symbol, a_pango_layout, 3)
+					if l_ellipsize_symbol.is_default_pointer then
+						debug ("gtk_error")
+							print (generator + ".draw_text_internal (..) [ERROR] pango_layout_set_ellipsize_symbol is NULL!%N")
+						end
+					else
+						{PANGO}.layout_set_ellipsize_call (l_ellipsize_symbol, a_pango_layout, 3)
+					end
 					{PANGO}.layout_set_width (a_pango_layout, a_width * {PANGO}.scale)
 				end
-
 				if a_angle /= 0.0 then
 					{CAIRO}.translate (l_drawable, l_x, l_y)
 
@@ -533,7 +537,7 @@ feature -- Drawing operations
 				{PANGO}.cairo_show_layout (l_drawable, a_pango_layout)
 
 					-- Free allocated resources
-				{GTK2}.g_object_unref (a_pango_layout)
+				{GDK}.g_object_unref (a_pango_layout)
 				{CAIRO}.restore (l_drawable)
 			end
 			post_drawing
@@ -625,7 +629,7 @@ feature -- Drawing operations
 			check attached {EV_PIXMAP_IMP} Result.implementation as pix_imp then
 				a_pix := pixbuf_from_drawable_at_position (area.x, area.y, 0, 0, area.width, area.height)
 				pix_imp.set_pixmap_from_pixbuf (a_pix)
-				{GTK2}.g_object_unref (a_pix)
+				{GDK}.g_object_unref (a_pix)
 			end
 		end
 
@@ -911,7 +915,7 @@ feature {EV_GTK_DEPENDENT_APPLICATION_IMP, EV_ANY_I} -- Implementation
 	pixbuf_from_drawable_at_position (src_x, src_y, dest_x, dest_y, a_width, a_height: INTEGER): POINTER
 			-- Return a GdkPixbuf object from the current Gdkpixbuf structure
 		do
-			Result := {GTK}.gdk_pixbuf_new (0, True, 8, a_width, a_height)
+			Result := {GDK}.gdk_pixbuf_new (0, True, 8, a_width, a_height)
 		end
 
 	pixbuf_from_drawable_with_size (a_width, a_height: INTEGER): POINTER
@@ -920,8 +924,8 @@ feature {EV_GTK_DEPENDENT_APPLICATION_IMP, EV_ANY_I} -- Implementation
 			a_pixbuf: POINTER
 		do
 			a_pixbuf := pixbuf_from_drawable
-			Result := {GTK2}.gdk_pixbuf_scale_simple (a_pixbuf, a_width, a_height, {GTK2}.gdk_interp_bilinear)
-			{GTK2}.g_object_unref (a_pixbuf)
+			Result := {GDK}.gdk_pixbuf_scale_simple (a_pixbuf, a_width, a_height, {GTK2}.gdk_interp_bilinear)
+			{GDK}.g_object_unref (a_pixbuf)
 		end
 
 feature {NONE} -- Implementation
@@ -949,8 +953,8 @@ feature {NONE} -- Implementation
 
 	draw_mask_on_pixbuf (a_pixbuf_ptr, a_mask_ptr: POINTER)
 		require
-			a_pixbuf_ptr_has_alpha: {GTK2}.gdk_pixbuf_get_has_alpha (a_pixbuf_ptr)
-			a_mask_ptr_has_alpha: {GTK2}.gdk_pixbuf_get_has_alpha (a_mask_ptr)
+			a_pixbuf_ptr_has_alpha: {GDK}.gdk_pixbuf_get_has_alpha (a_pixbuf_ptr)
+			a_mask_ptr_has_alpha: {GDK}.gdk_pixbuf_get_has_alpha (a_mask_ptr)
 		external
 			"C inline use <ev_gtk.h>"
 		alias
@@ -1020,7 +1024,7 @@ feature {EV_ANY, EV_ANY_I} -- Implementation
 	interface: detachable EV_DRAWABLE note option: stable attribute end
 
 note
-	copyright:	"Copyright (c) 1984-2021, Eiffel Software and others"
+	copyright:	"Copyright (c) 1984-2024, Eiffel Software and others"
 	license:	"Eiffel Forum License v2 (see http://www.eiffel.com/licensing/forum.txt)"
 	source: "[
 			Eiffel Software

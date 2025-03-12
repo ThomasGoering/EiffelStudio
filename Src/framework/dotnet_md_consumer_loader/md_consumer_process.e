@@ -38,21 +38,19 @@ feature {NONE} -- Initialization
 			p: PATH
 			fut: FILE_UTILITIES
 		do
-				-- .Net framework runtimes start with "v"
-				-- .Net CORE runtime are formatted like "Microsoft.NETCore.App/6.0..."
-			if a_runtime_version.has ('/') then
+			if (create {IL_NETCORE_DETECTOR}).is_il_netcore (a_runtime_version) then
 				emdc_location := eiffel_layout.nemdc_command_name
 			else
 				emdc_location := eiffel_layout.emdc_command_name
 			end
-			if attached {EXECUTION_ENVIRONMENT}.item ("ISE_EMDC") as s then
+			if attached {EXECUTION_ENVIRONMENT}.item ({EIFFEL_ENV}.ise_emdc_env) as s then
 				create p.make_from_string (s)
 				if fut.file_path_exists (p) then
 					emdc_location := p
 				end
 			end
 
-			is_debug := attached {EXECUTION_ENVIRONMENT}.item ("ISE_EMDC_DEBUG") as s and then s.is_case_insensitive_equal ("true")
+			is_debug := attached {EXECUTION_ENVIRONMENT}.item ({EIFFEL_ENV}.ise_emdc_env + "_DEBUG") as s and then s.is_case_insensitive_equal ("true")
 
 			cache_location := a_cache_path
 			create dir.make_with_path (a_cache_path)
@@ -117,6 +115,7 @@ feature -- XML generation
 			args: ARRAYED_LIST [READABLE_STRING_GENERAL]
 			cmd: STRING_32
 			s: STRING_32
+			dbg: PLAIN_TEXT_FILE
 		do
 			create pf
 			create args.make (10)
@@ -126,14 +125,6 @@ feature -- XML generation
 			loop
 				args.force ("-a")
 				args.force (a)
-			end
-			if is_eiffel_layout_defined and then eiffel_layout.use_json_dotnet_md_cache then
-				args.force ("-json") -- For "JSON" storage
-			end
-			args.force ("-o")
-			args.force (cache_location.name)
-			if a_info_only then
-				args.force ("-g")
 			end
 			if a_references /= Void then
 				across
@@ -166,10 +157,21 @@ feature -- XML generation
 				args.extend (d)
 			end
 
+			if is_eiffel_layout_defined and then eiffel_layout.use_json_dotnet_md_cache then
+				args.force ("-json") -- For "JSON" storage
+			end
+			args.force ("-o")
+			args.force (cache_location.name)
+
+			if a_info_only then
+				args.force ("-g")
+			end
+
 			if is_debug then
 				args.force ("-debug")
+			else
+				args.force("-silent")
 			end
-			args.force("-silent")
 
 			p := pf.process_launcher (emdc_location.name, args, emdc_location.parent.name)
 
@@ -191,6 +193,26 @@ feature -- XML generation
 				print ("#CONSUMER: " + {UTF_CONVERTER}.string_32_to_utf_8_string_8 (cmd) + "%N")
 			end
 
+				-- Be sure to avoid console Windows popup.
+			p.enable_launch_in_new_process_group
+			p.set_separate_console (False)
+			p.set_hidden (True)
+			p.set_detached_console (True)
+
+			if is_debug then
+				if eiffel_layout.is_user_files_supported then
+					create dbg.make_with_path (eiffel_layout.log_path.extended ("emdc.log"))
+					dbg.open_append
+					dbg.put_string ("%N====%N")
+					dbg.put_string_general (cmd)
+					dbg.put_string ("%N----%N")
+					dbg.close
+					p.redirect_output_to_file (dbg.path.name)
+					p.redirect_error_to_same_as_output
+				end
+			end
+
+				-- Launch the process execution
 			p.launch
 			if p.launched then
 				p.wait_for_exit
@@ -215,7 +237,7 @@ feature -- XML generation
 
 note
 	ca_ignore: "CA011", "CA011: too many arguments"
-	copyright: "Copyright (c) 1984-2022, Eiffel Software"
+	copyright: "Copyright (c) 1984-2023, Eiffel Software"
 	license: "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[

@@ -207,6 +207,7 @@ feature {NONE} -- Action handlers
 			s: STRING
 			l_dbg: BOOLEAN
 			acc: detachable ES_ACCOUNT
+			l_scaler: EVS_DPI_SCALER
 		do
 			b := main_box
 			b.wipe_out
@@ -236,8 +237,17 @@ feature {NONE} -- Action handlers
 
 						append_bold_text_to (locale.translation_in_context ("License plan: ", "cloud.info"), txt)
 						append_text_to (l_lic.plan_name, txt)
+						if l_lic.is_fallback and then not l_lic.is_suspended then
+							append_bold_text_to (locale.translation_in_context (" (fallback)", "cloud.info"), txt)
+						end
 						append_text_to ("%N", txt)
-						if attached l_lic.expiration_date as dt then
+						if l_lic.is_suspended then
+							append_bold_text_to (locale.translation_in_context ("License status: SUSPENDED", "cloud.info"), txt)
+							append_text_to ("%N", txt)
+						elseif l_lic.is_fallback then
+							append_bold_text_to (locale.translation_in_context ("License status: FALLBACK", "cloud.info"), txt)
+							append_text_to ("%N", txt)
+						elseif attached l_lic.expiration_date as dt then
 							nb_days := l_lic.days_remaining
 							append_bold_text_to (locale.translation_in_context ("Expires: ", "cloud.info"), txt)
 							append_time_to (dt, txt)
@@ -278,6 +288,22 @@ feature {NONE} -- Action handlers
 							append_bold_text_to (locale.translation_in_context ("Installation id: ", "cloud.info"), txt)
 							append_text_to (cld.installation.id, txt)
 							append_text_to ("%N", txt)
+						end
+					end
+					if is_advanced_view and attached cld.installation.adapted_licenses as lics and then not lics.is_empty then
+						append_text_to ("%N", txt)
+						append_bold_text_to (locale.plural_translation_in_context ("Other license adapted for this installation:", "Other licenses adapted for this installation", "cloud.info",lics.count), txt)
+						append_text_to ("%N", txt)
+						across
+							lics as ic
+						loop
+							if attached ic.item as lic then
+								append_text_to (" - ", txt)
+								append_text_to (lic.key, txt)
+								append_text_to (" (", txt)
+								append_text_to (lic.plan_name, txt)
+								append_text_to (")%N", txt)
+							end
 						end
 					end
 					if is_advanced_view and attached cld.active_session as sess then
@@ -393,11 +419,22 @@ feature {NONE} -- Action handlers
 				if is_cloud_available then
 					if acc /= Void then
 						create hb
+						create l_scaler.make
+						hb.set_padding_width (l_scaler.scaled_size (5))
+						hb.set_border_width (l_scaler.scaled_size (3))
+
+
 						b.extend (hb)
 						b.disable_item_expand (hb)
 						hb.extend (create {EV_CELL})
 
 	--					create hb
+
+						create but.make_with_text_and_action (cloud_names.button_visit_web_manage_installation, agent on_web_account_installation (cld, acc))
+						but.set_tooltip (cloud_names.tooltip_button_visit_web_manage_installation)
+						hb.extend (but)
+						layout_constants.set_default_size_for_button (but)
+						hb.disable_item_expand (but)
 
 						create but.make_with_text_and_action (cloud_names.button_visit_web_account, agent on_web_account (cld, acc))
 						but.set_tooltip (cloud_names.tooltip_button_visit_web_account)
@@ -464,7 +501,7 @@ feature {NONE} -- Action handlers
 								l_startup_page: ES_STARTUP_PAGE
 							do
 								if attached i_cld.eiffel_edition as ed then
-									create l_startup_page.make (ed)
+									l_startup_page := (create {ES_STARTUP_PAGE_FACTORY}).startup_page (ed)
 									l_startup_page.switch_to_account_page (i_cld, Void, not {ES_IDE_SETTINGS}.cloud_required)
 									l_startup_page.set_quit_action (agent do (create {EB_EXIT_APPLICATION_COMMAND}).execute_with_confirmation (False) end)
 									l_startup_page.show_modal_to_window (develop_window.window)
@@ -559,6 +596,16 @@ feature {NONE} -- Action handlers
 			l_style := widget.pointer_style
 			widget.set_pointer_style (pixmaps.stock_pixmaps.busy_cursor)
 			open_url (cld.view_account_website_url)
+			widget.set_pointer_style (l_style)
+		end
+
+	on_web_account_installation (cld: ES_CLOUD_S; acc: ES_ACCOUNT)
+		local
+			l_style: EV_POINTER_STYLE
+		do
+			l_style := widget.pointer_style
+			widget.set_pointer_style (pixmaps.stock_pixmaps.busy_cursor)
+			open_url (cld.view_installation_website_url (cld.installation))
 			widget.set_pointer_style (l_style)
 		end
 
@@ -710,7 +757,7 @@ feature -- Rich text helper
 		end
 
 note
-	copyright: "Copyright (c) 1984-2020, Eiffel Software"
+	copyright: "Copyright (c) 1984-2024, Eiffel Software"
 	license: "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[

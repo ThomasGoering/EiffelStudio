@@ -30,13 +30,9 @@
 			</condition>
 		</external_include>
 		<library name="base" location="$ISE_LIBRARY\library\base\base.ecf"/>
-		<assembly name="mscorlib" location="$ISE_DOTNET_FRAMEWORK\mscorlib.dll">
-			<renaming old_name="INTERFACE_TYPE_ATTRIBUTE" new_name="SYSTEM_INTERFACE_TYPE_ATTRIBUTE"/>
-			<renaming old_name="ENCODING" new_name="SYSTEM_ENCODING"/>
-			<renaming old_name="THREAD_STATE" new_name="SYSTEM_THREAD_STATE"/>
-			<renaming old_name="TIMER" new_name="SYSTEM_TIMER"/>
-			<renaming old_name="WEAK_REFERENCE" new_name="SYSTEM_WEAK_REFERENCE"/>
-		</assembly>
+		<assembly name="mscorlib" location="$ISE_DOTNET_FRAMEWORK\mscorlib.dll"/>
+		<assembly name="system" location="$ISE_DOTNET_FRAMEWORK\System.dll"/>
+		<assembly name="system_runtime" location="$ISE_DOTNET_FRAMEWORK\System.Runtime.dll"/>
 		<cluster name="time" location=".\" recursive="true">
 			<option namespace="DateTime">
 			</option>

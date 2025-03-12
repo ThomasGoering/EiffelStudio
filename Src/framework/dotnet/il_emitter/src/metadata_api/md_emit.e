@@ -10,7 +10,6 @@ class
 	MD_EMIT
 
 inherit
-
 	MD_EMIT_I
 		redefine
 			prepare_to_save
@@ -28,11 +27,13 @@ create
 
 feature {NONE}
 
-	make
+	make (a_md_ui: MD_UI)
 			-- Create a new instance of METADATA_EMIT
 			--| creates a set of in-memory metadata tables,
 			--| generates a unique GUID (module version identifier, or MVID) for the metadata,
 		do
+			md_ui := a_md_ui
+
 				-- Using PE_GENERATOR to get access helper features.
 			create pe_writer.make
 			create stream_headers.make_filled (0, 5, 2)
@@ -41,6 +42,8 @@ feature {NONE}
 			initialize_unit
 			create tables_header
 				-- we don't initialize the compilation unit since we don't provide the name of it (similar to the COM interface)
+
+			create opt_data_for_type_def.make (5)
 		ensure
 			module_guid_set: module_guid.count = 16
 		end
@@ -57,7 +60,7 @@ feature {NONE}
 			until
 				i >= n
 			loop
-				tables.force (create {MD_TABLE}.make (i), i)
+				tables.force (create {MD_TABLE}.make (i.to_natural_32), i)
 				i := i + 1
 			end
 		end
@@ -90,17 +93,57 @@ feature -- Access
 	tables: SPECIAL [MD_TABLE]
 			--  in-memory metadata tables
 
-	md_table (idx: NATURAL_32): MD_TABLE
+	md_table (a_tb_id: NATURAL_32): MD_TABLE
 		require
-			tables.valid_index (idx.to_integer_32)
+			tables.valid_index (a_tb_id.to_integer_32)
 		do
-			Result := tables [idx.to_integer_32]
+			Result := tables [a_tb_id.to_integer_32]
 		end
 
 	--pe_writer: PE_WRITER
 	pe_writer: PE_GENERATOR
 			-- helper class to generate the PE file.
 			--| using as a helper class to access needed features.
+
+
+	md_ui: MD_UI
+			-- Integration with UI to process UI events.
+
+feature -- Optimization
+
+	opt_data_for_type_def: HASH_TABLE [MD_TYPE_DEF_DATA_FOR_OPTIMIZATION, NATURAL_32]
+			-- Data used for optimization Indexed by TypeDef token
+
+	opt_data_for_type_def_dump: STRING
+			-- Dump of `opt_data_for_type_def`, for debugging.
+		do
+			create Result.make (0)
+			if attached opt_data_for_type_def as tb then
+				Result.append ("TYPES DATA:%N")
+				across
+					tb as tdata
+				loop
+					Result.append ("TypeDef 0x" + @tdata.key.to_hex_string + "%N")
+					if attached tdata.field_list as lst then
+						Result.append (" Fields ("+lst.count.out+"):%N")
+						across
+							lst as f
+						loop
+							Result.append ("   - 0x" + f.to_hex_string + "%N")
+						end
+					end
+					if attached tdata.method_def_list as lst then
+						Result.append (" Methods ("+lst.count.out+"):%N")
+						across
+							lst as m
+						loop
+							Result.append ("   - 0x" + m.to_hex_string + "%N")
+						end
+					end
+				end
+				Result.append ("%N")
+			end
+		end
 
 feature -- Access
 
@@ -265,7 +308,10 @@ feature {NONE} -- Implementation
 
 			tables_header.major_version := 2
 			tables_header.reserved2 := 1
-			tables_header.mask_sorted := ({INTEGER_64} 0x1600 |<< 32) + 0x3325FA00
+-- Why having Event and Property sorted? anyway, the Eiffel compiler does not use them.
+--			tables_header.mask_sorted := 0b0000000000000000000101100000000000110011001001011111101000000000
+
+			tables_header.mask_sorted := 0b0000000000000000000101100000000000110011000000011111101000000000
 			--
 				--FIXME: check if size is about rows count, or offset (for Blob)
 				-- See II.24.2.6 #~ stream
@@ -381,204 +427,15 @@ feature -- Save
 
 feature -- Pre-Save
 
-	prepare_to_save
+	prepare_to_save (fn: READABLE_STRING_GENERAL)
 			-- Prepare data to be save
 		local
-			max_field_idx, max_meth_idx, max_param_idx: NATURAL_32
-			field_idx, meth_idx, param_idx: NATURAL_32
-			l_missing_field_index_entries: ARRAYED_LIST [PE_TYPE_DEF_TABLE_ENTRY]
-			l_missing_method_index_entries: ARRAYED_LIST [PE_TYPE_DEF_TABLE_ENTRY]
-			l_missing_param_index_entries: ARRAYED_LIST [PE_METHOD_DEF_TABLE_ENTRY]
+			md: MD_TABLE_UTILITIES
 		do
-			Precursor
-				-- Update all uninitialized PE_LIST (FieldList, MethodList, ParamList, ...)
-			if attached md_table ({PE_TABLES}.tmethoddef) as tb then
-				max_meth_idx := tb.next_index
-			end
-			if attached md_table ({PE_TABLES}.tfield) as tb then
-				max_field_idx := tb.next_index
-			end
-			if attached md_table ({PE_TABLES}.tparam) as tb then
-				max_param_idx := tb.next_index
-			end
+			Precursor (fn)
 
-				-- TypeDef table
-			if attached md_table ({PE_TABLES}.ttypedef) as typedef_tb then
-				across
-					typedef_tb as e
-				loop
-					if attached {PE_TYPE_DEF_TABLE_ENTRY} e as l_type_def_entry then
-							-- FieldList
-						if l_type_def_entry.is_field_list_index_set then
-							field_idx := l_type_def_entry.fields.index
-							if l_missing_field_index_entries /= Void then
-								across
-									l_missing_field_index_entries as t
-								loop
-									t.set_field_list_index (l_type_def_entry.fields.index)
-								end
-								l_missing_field_index_entries.wipe_out
-							end
-						else
-							if l_missing_field_index_entries = Void then
-								create l_missing_field_index_entries.make (10)
-							end
-							l_missing_field_index_entries.force (l_type_def_entry)
-						end
-
-							-- MethodList
-						if l_type_def_entry.is_method_list_index_set then
-							meth_idx := l_type_def_entry.methods.index
-							if l_missing_method_index_entries /= Void then
-								across
-									l_missing_method_index_entries as t
-								loop
-									t.set_method_list_index (l_type_def_entry.methods.index)
-								end
-								l_missing_method_index_entries.wipe_out
-							end
-						else
-							if l_missing_method_index_entries = Void then
-								create l_missing_method_index_entries.make (10)
-							end
-							l_missing_method_index_entries.force (l_type_def_entry)
-						end
-					else
-						check is_type_def: False end
-					end
-				end
-				if l_missing_field_index_entries /= Void then
-					across
-						l_missing_field_index_entries as t
-					loop
-						t.set_field_list_index (max_field_idx)
-					end
-					l_missing_field_index_entries := Void
-				end
-				if l_missing_method_index_entries /= Void then
-					across
-						l_missing_method_index_entries as t
-					loop
-						t.set_method_list_index (max_meth_idx)
-					end
-					l_missing_method_index_entries := Void
-				end
-			end
-
-				-- MethodDef table
-			if attached md_table ({PE_TABLES}.tmethoddef) as methoddef_tb then
-				across
-					methoddef_tb as e
-				loop
-					if attached {PE_METHOD_DEF_TABLE_ENTRY} e as l_method_def_entry then
-							-- ParamList
-						if l_method_def_entry.is_param_list_index_set then
-							param_idx := l_method_def_entry.param_index.index
-							if l_missing_param_index_entries /= Void then
-								across
-									l_missing_param_index_entries as m
-								loop
-									m.set_param_list_index (l_method_def_entry.param_index.index)
-								end
-								l_missing_param_index_entries.wipe_out
-							end
-						else
-							if l_missing_param_index_entries = Void then
-								create l_missing_param_index_entries.make (10)
-							end
-							l_missing_param_index_entries.force (l_method_def_entry)
-						end
-					else
-						check is_method_def: False end
-					end
-				end
-				if l_missing_param_index_entries /= Void then
-					across
-						l_missing_param_index_entries as t
-					loop
-						t.set_param_list_index (max_param_idx)
-					end
-					l_missing_param_index_entries := Void
-				end
-			end
-
-				-- Sort tables...
-				-- CustomAttribute table
-			ensure_table_is_sorted ({PE_TABLES}.tcustomattribute)
-			ensure_table_is_sorted ({PE_TABLES}.tinterfaceimpl)
-			ensure_table_is_sorted ({PE_TABLES}.tmethodimpl)
-			ensure_table_is_sorted ({PE_TABLES}.tmethodsemantics)
-		end
-
-	ensure_table_is_sorted (tb_id: NATURAL_32)
-			-- Ensure table associated with `tb_id` is sorted.
-		do
-			if
-				attached md_table (tb_id) as tb and then
-				attached table_sorter (tb_id) as l_sorter
-			then
-				debug ("il_emitter")
-					if not tb.is_sorted (l_sorter) then
-						print ("Table ["+ tb_id.to_natural_8.to_hex_string +"] is NOT sorted%N")
-					end
-				end
-				tb.sort (l_sorter)
-				check tb.is_sorted (l_sorter) end
-			end
-		end
-
-	table_sorter (tb_id: NATURAL_32): detachable QUICK_SORTER [PE_TABLE_ENTRY_BASE]
-			-- Sorter for table associated with `tb_id`.
-		local
-			l_comparator: AGENT_EQUALITY_TESTER [PE_TABLE_ENTRY_BASE]
-		do
-			inspect tb_id
-			when {PE_TABLES}.tcustomattribute then
-				create l_comparator.make (agent (e1, e2: PE_TABLE_ENTRY_BASE): BOOLEAN
-					do
-						if
-							attached {PE_CUSTOM_ATTRIBUTE_TABLE_ENTRY} e1 as o1 and then
-							attached {PE_CUSTOM_ATTRIBUTE_TABLE_ENTRY} e2 as o2
-						then
-							Result := o1.less_than (o2)
-						end
-					end)
-			when {PE_TABLES}.tinterfaceimpl then
-				create l_comparator.make (agent (e1, e2: PE_TABLE_ENTRY_BASE): BOOLEAN
-					do
-						if
-							attached {PE_INTERFACE_IMPL_TABLE_ENTRY} e1 as o1 and then
-							attached {PE_INTERFACE_IMPL_TABLE_ENTRY} e2 as o2
-						then
-							Result := o1.less_than (o2)
-						end
-					end)
-			when {PE_TABLES}.tmethodimpl then
-				create l_comparator.make (agent (e1, e2: PE_TABLE_ENTRY_BASE): BOOLEAN
-					do
-						if
-							attached {PE_METHOD_IMPL_TABLE_ENTRY} e1 as o1 and then
-							attached {PE_METHOD_IMPL_TABLE_ENTRY} e2 as o2
-						then
-							Result := o1.less_than (o2)
-						end
-					end)
-			when {PE_TABLES}.tmethodsemantics then
-				create l_comparator.make (agent (e1, e2: PE_TABLE_ENTRY_BASE): BOOLEAN
-					do
-						if
-							attached {PE_METHOD_SEMANTICS_TABLE_ENTRY} e1 as o1 and then
-							attached {PE_METHOD_SEMANTICS_TABLE_ENTRY} e2 as o2
-						then
-							Result := o1.less_than (o2)
-						end
-					end)
-			else
-				-- Not implemented or not needed
-			end
-			if l_comparator /= Void then
-				create Result.make (l_comparator)
-			end
+			create md.make (Current, fn)
+			md.prepare_to_save
 		end
 
 feature -- Save
@@ -786,6 +643,16 @@ feature {NONE} -- Implementation
 					-- Adding a null character a the end of the string
 					-- C++ code uses put(streamNames_[i], strlen(streamNames_[i]) + 1);
 				l_names := pe_writer.stream_names [i].twin
+				if
+					l_names.same_string_general ("#~") and
+					(
+						tables [{PE_TABLES}.tmethodptr.to_integer_32].count +
+						tables [{PE_TABLES}.tfieldptr.to_integer_32].count > 0
+					)
+				then
+						-- When using FieldPointer or MethodPointer tables, #~ should be #-
+					l_names := "#-"
+				end
 				l_names.append_character ('%U')
 				a_file.put_string (l_names.to_string_8)
 				align (a_file, 4)
@@ -885,6 +752,8 @@ feature {NONE} -- Implementation
 
 feature -- Settings
 
+	module_name: detachable IMMUTABLE_STRING_32
+
 	set_module_name (a_name: CLI_STRING)
 			-- Set the module name for the compilation unit being emitted.
 		local
@@ -892,6 +761,7 @@ feature -- Settings
 			l_entry: PE_TABLE_ENTRY_BASE
 			l_unused_token: NATURAL_32
 		do
+			module_name := a_name.string_32
 			l_name_index := pe_writer.hash_string (a_name.string_32)
 			create {PE_MODULE_TABLE_ENTRY} l_entry.make_with_data (l_name_index, guid_index)
 			l_unused_token := add_table_entry (l_entry)
@@ -908,18 +778,16 @@ feature -- Settings
 				--  	retrieve_table_row (from specific table entry)
 			if
 				attached extract_table_type_and_row (method_token) as d and then
-				attached {PE_METHOD_DEF_TABLE_ENTRY} md_table (d.table_type_index)[d.table_row_index] as l_method_def
+				attached md_table (d.table_type_index) as l_method_def_table and then
+				attached {PE_METHOD_DEF_TABLE_ENTRY} l_method_def_table [d.table_row_index] as l_method_def
 			then
-
 					-- Set RVA value in method definition table entry
-				l_method_def.set_rva (rva.to_natural_32)
-
-					-- Update method definition table entry in metadata tables
-					-- Create a helper feature to update an entry in a table row.
-				md_table (d.table_type_index).replace (l_method_def, d.table_row_index)
+				if not l_method_def.has_abstract then
+						-- FIXME: how do we reach this point for abstract method?
+					l_method_def.set_rva (rva.to_natural_32)
+				end
 			else
-					-- TODO
-				check todo: False end
+				check has_method_def_entry: False end
 			end
 		end
 
@@ -1060,6 +928,7 @@ feature -- Definition: Creation
 --			l_field_index, l_method_index: NATURAL
 			l_class_index: NATURAL_32
 			last_token: NATURAL_32
+			tdata: MD_TYPE_DEF_DATA_FOR_OPTIMIZATION
 		do
 			l_type_name := type_name.string_32
 			debug ("il_emitter_table")
@@ -1091,7 +960,12 @@ feature -- Definition: Creation
 			l_class_index := next_table_index (l_entry.table_index)
 			Result := add_table_entry (l_entry).to_integer_32
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> index=" + l_class_index.out + " token="+ Result.to_hex_string + "%N")
+				print ({STRING_32} " -> #" + l_class_index.out + " token="+ Result.to_hex_string + "%N")
+			end
+			tdata := opt_data_for_type_def [Result.to_natural_32]
+			if tdata = Void then
+				create tdata
+				opt_data_for_type_def [Result.to_natural_32] := tdata
 			end
 
 				-- Adds entries in the PE_INTERFACE_IMPL_TABLE_ENTRY table for each implemented interface, if any.
@@ -1146,6 +1020,8 @@ feature -- Definition: Creation
 			Result := assembly_emitter.define_file (file_name, hash_value, file_flags)
 		end
 
+	last_define_method_class: INTEGER
+
 	define_method (method_name: CLI_STRING; in_class_token: INTEGER; method_flags: INTEGER;
 			a_signature: MD_METHOD_SIGNATURE; impl_flags: INTEGER): INTEGER
 			-- Create reference to method in class `in_class_token`.
@@ -1156,7 +1032,11 @@ feature -- Definition: Creation
 			l_method_index: NATURAL_32
 		do
 			debug ("il_emitter_table")
-				print ({STRING_32} "Method: " + method_name.string_32 + " (class:"+ in_class_token.to_hex_string)
+				if in_class_token < last_define_method_class then
+					print ({STRING_32} "<!> ")
+				end
+				last_define_method_class := in_class_token
+				print ({STRING_32} "Method: " + method_name.string_32 + " (class:"+ in_class_token.to_hex_string + ")")
 			end
 				-- See II.22.26 MethodDef : 0x06
 
@@ -1171,13 +1051,19 @@ feature -- Definition: Creation
 			l_method_index := next_table_index ({PE_TABLES}.tmethoddef)
 			Result := add_table_entry (l_method_def_entry).to_integer_32
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> ("+ l_method_index.out +") index=" + l_method_index.out + " token=" + Result.to_hex_string +"%N")
+				print ({STRING_32} " -> #"+ l_method_index.out +" token=" + Result.to_hex_string +"%N")
+			end
+			if attached opt_data_for_type_def [in_class_token.to_natural_32] as tdata then
+				tdata.record_method_def (Result.to_natural_32)
+			else
+				check has_type_data: False end
 			end
 
 				-- Extract table type and row from the in_class_token
 			if
 				attached extract_table_type_and_row (in_class_token) as d and then
-				attached {PE_TYPE_DEF_TABLE_ENTRY} md_table (d.table_type_index)[d.table_row_index] as e
+				attached {MD_TABLE} md_table (d.table_type_index) as tb and then
+				attached {PE_TYPE_DEF_TABLE_ENTRY} tb[d.table_row_index] as e
 			then
 				if not e.is_method_list_index_set then
 					e.set_method_list_index (l_method_index)
@@ -1216,7 +1102,36 @@ feature -- Definition: Creation
 			last_token := add_table_entry (l_method_impl_entry)
 
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> index=" + l_method_impl_index.out + " token=" + last_token.to_hex_string +"%N")
+				print ({STRING_32} " -> #" + l_method_impl_index.out + " token=" + last_token.to_hex_string +"%N")
+			end
+		end
+
+	define_method_spec (method_token: INTEGER; a_signature: MD_METHOD_SIGNATURE): INTEGER
+			-- Token for new method spec from `method_token` and `a_signature`.
+		local
+			l_method_spec_entry: PE_METHOD_SPEC_TABLE_ENTRY
+			l_method: PE_METHOD_DEF_OR_REF
+			l_method_signature: NATURAL_32
+			l_method_spec_index: NATURAL_32
+		do
+			debug ("il_emitter_table")
+				print ({STRING_32} "MethodSpec: method="+ method_token.to_hex_string + " signature=" + a_signature.debug_output)
+			end
+
+				-- Get the method body and method declaration from their tokens
+			l_method := create_method_def_or_ref (method_token, extract_table_type_and_row (method_token).table_row_index)
+
+				-- Get Method signature data
+			l_method_signature := hash_blob (a_signature.as_array, a_signature.count.to_natural_32)
+
+				-- Create a new PE_METHOD_IMPL_TABLE_ENTRY instance with the given data
+			create l_method_spec_entry.make_with_data (l_method, l_method_signature)
+
+				-- Add the new PE_METHOD_IMPL_TABLE_ENTRY instance to the metadata tables.
+			l_method_spec_index := next_table_index (l_method_spec_entry.table_index)
+			Result := add_table_entry (l_method_spec_entry).to_integer_32
+			debug ("il_emitter_table")
+				print ({STRING_32} " -> #"+ l_method_spec_index.out +" token=" + Result.to_hex_string +"%N")
 			end
 		end
 
@@ -1250,7 +1165,7 @@ feature -- Definition: Creation
 			Result := add_table_entry (l_property).to_integer_32
 
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> index=" + l_property_index.out + " token=" + Result.to_hex_string +"%N")
+				print ({STRING_32} " -> #" + l_property_index.out + " token=" + Result.to_hex_string +"%N")
 			end
 
 				-- Define the method implementations for the getter and setter, if provided.
@@ -1317,7 +1232,9 @@ feature -- Definition: Creation
 			l_param_entry_index: NATURAL_32
 		do
 
-			to_implement ("Review need ensure every row in the Param table is owned by one, and only one, row in the MethodDef table")
+			debug ("refactor_fixme")
+				to_implement ("Review need ensure every row in the Param table is owned by one, and only one, row in the MethodDef table")
+			end
 
 				-- Extract table type and row from the method token
 			d := extract_table_type_and_row (in_method_token)
@@ -1344,7 +1261,7 @@ feature -- Definition: Creation
 			l_param_entry_index := next_table_index ({PE_TABLES}.tparam)
 			Result := add_table_entry (l_param_entry).to_integer_32
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> index=" + l_param_index.out + " token="+ Result.to_hex_string + "%N")
+				print ({STRING_32} " -> #" + l_param_index.out + " token="+ Result.to_hex_string + "%N")
 			end
 
 			if
@@ -1406,12 +1323,18 @@ feature -- Definition: Creation
 			Result := add_table_entry (l_field_def_entry).to_integer_32
 
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> ("+ l_field_index.out +") index=" + l_field_index.out + " token=" + Result.to_hex_string +"%N")
+				print ({STRING_32} " -> #"+ l_field_index.out +" token=" + Result.to_hex_string +"%N")
+			end
+			if attached opt_data_for_type_def [in_class_token.to_natural_32] as tdata then
+				tdata.record_field (Result.to_natural_32)
+			else
+				check has_type_data: False end
 			end
 
 			if
 				attached extract_table_type_and_row (in_class_token) as d and then
-				attached {PE_TYPE_DEF_TABLE_ENTRY} md_table (d.table_type_index)[d.table_row_index] as e
+				attached {MD_TABLE} md_table (d.table_type_index) as tb and then
+				attached {PE_TYPE_DEF_TABLE_ENTRY} tb[d.table_row_index] as e
 			then
 				if not e.is_field_list_index_set then
 					e.set_field_list_index (l_field_index)
@@ -1484,6 +1407,9 @@ feature -- Definition: Creation
 			l_ca_type := create_pe_custom_attribute_type (constructor, l_constructor_tuple.table_row_index)
 
 			debug ("il_emitter_table")
+				if attached module_name as modn then
+					print ({STRING_32} "<<"+modn+">> ")
+				end
 				print ({STRING_32} "CustomAttribute: "
 						+ " owner="+ owner.to_hex_string +" [" + l_owner_tuple.table_row_index.to_natural_32.to_hex_string + "]"
 						+ " ctor="+ constructor.to_hex_string +" [" + l_constructor_tuple.table_row_index.to_natural_32.to_hex_string + "]"
@@ -1497,9 +1423,52 @@ feature -- Definition: Creation
 			Result := add_table_entry (l_ca_entry).to_integer_32
 
 			debug ("il_emitter_table")
-				print ({STRING_32} " -> ("+ pe_index.out +") index=" + pe_index.out + " token=" + Result.to_hex_string +"%N")
+				print ({STRING_32} " -> #"+ pe_index.out +" token=" + Result.to_hex_string +"%N")
 			end
 		end
+
+    define_generic_param (a_name: CLI_STRING; token: INTEGER; index: INTEGER; param_flags: INTEGER; type_constraints: ARRAY [INTEGER]): INTEGER
+    		--| Define a formal type parameter for the given TypeDef or MethodDef `token'.
+			--| token: TypeDef or MethodDef
+			--| type_constratins : Array of type constraints (TypeDef,TypeRef,TypeSpec)
+			--| index:  Index of the type parameter
+			--| param_flags: Flags, for future use (e.g. variance)
+			--| a_name: Name
+    	    -- Define a formal type parameter for the given TypeDef or MethodDef `token'.
+        note
+            eis: "name=GenericParam table II.22.20", "src=https://www.ecma-international.org/wp-content/uploads/ECMA-335_6th_edition_june_2012.pdf#page=254&zoom=100,116,309", "protocol"
+        local
+            l_owner_index: NATURAL_32
+            l_generic_param_entry: PE_GENERIC_PARAM_TABLE_ENTRY
+            d: like extract_table_type_and_row
+            l_generic_param_name_index: INTEGER_32
+            l_generic_param_flags: INTEGER
+            l_generic_param_entry_index: NATURAL_32
+        do
+           	 -- Extract table type and row from the method token
+            d := extract_table_type_and_row (token)
+            l_owner_index := d.table_row_index
+
+            debug ("il_emitter_table")
+                print ({STRING_32} "GenericParam: owner=" + token.to_hex_string + " owner.index=" + l_owner_index.out + " name=" + a_name.string_32 + " index=" + index.out)
+            end
+
+ 	           -- Convert the parameter name to UTF-16 and add it to the string heap
+            l_generic_param_name_index := pe_writer.hash_string (a_name.string_32).to_integer_32
+
+            l_generic_param_flags := param_flags
+
+     	       -- Create a new PE_GENERIC_PARAM_TABLE_ENTRY instance with the given data
+            create l_generic_param_entry.make_with_data (index.to_natural_16, l_generic_param_flags.to_natural_16, create_type_def_or_method_def (token, l_owner_index), l_generic_param_name_index.to_natural_32)
+
+           		 -- Add the new PE_GENERIC_PARAM_TABLE_ENTRY instance to the metadata tables.
+            l_generic_param_entry_index := next_table_index ({PE_TABLES}.tGenericParam)
+            Result := add_table_entry (l_generic_param_entry).to_integer_32
+
+            debug ("il_emitter_table")
+                print ({STRING_32} " -> #" + index.out + " token=" + Result.to_hex_string + "%N")
+            end
+        end
 
 feature -- Constants
 

@@ -68,6 +68,11 @@ feature -- Status
 						)
 		end
 
+	has_abstract: BOOLEAN
+		do
+			Result := (flags.to_natural_16 & 0x0400) = 0x0400
+		end
+
 feature -- Access
 
 	method: detachable PE_METHOD
@@ -102,6 +107,9 @@ feature -- Status report
 			-- String that should be displayed in debugger to represent `Current'.
 		do
 			Result := "{Method} "
+			if has_abstract then
+				Result.append ("abstract ")
+			end
 			Result := Result + " params[" + param_index.debug_output + "]"
 		end
 
@@ -112,7 +120,7 @@ feature -- Element change
 			not is_param_list_index_set
 		do
 			debug ("il_emitter_table")
-				print ("  -> Method: Update ParamList (" + param_index.index.to_hex_string + " -> " + idx.to_hex_string + ") MethodName=" + name_index.debug_output + "%N")
+				print ("  -> Method: Update ParamList (" + param_index.index.to_hex_string + " -> " + idx.to_hex_string + ")%N")
 			end
 			param_index.update_index (idx)
 		ensure
@@ -190,6 +198,7 @@ feature -- Set Rva
 			rva := a_value
 		ensure
 			rva_set: rva = a_value
+			has_abstract implies rva = 0
 		end
 
 feature -- Operations

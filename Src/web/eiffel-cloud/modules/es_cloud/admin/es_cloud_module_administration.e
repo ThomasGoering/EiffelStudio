@@ -59,7 +59,7 @@ feature {NONE} -- Router/administration
 				a_router.handle (admin_licenses_location, create {ES_CLOUD_LICENSES_ADMIN_HANDLER}.make (l_es_cloud_api, Current), a_router.methods_get_post)
 				a_router.handle (admin_licenses_location + "{license}", create {ES_CLOUD_LICENSES_ADMIN_HANDLER}.make (l_es_cloud_api, Current), a_router.methods_get_post)
 				a_router.handle ("/cloud/account/{user}", create {ES_CLOUD_ACCOUNTS_ADMIN_HANDLER}.make (l_es_cloud_api, Current), a_router.methods_get_post)
-				a_router.handle ("/cloud/installations/", create {ES_CLOUD_INSTALLATIONS_ADMIN_HANDLER}.make (l_es_cloud_api), a_router.methods_get_post)
+				a_router.handle ("/cloud/installations/", create {ES_CLOUD_INSTALLATIONS_ADMIN_HANDLER}.make (l_es_cloud_api, Current), a_router.methods_get_post)
 				create plan_hlr.make (l_es_cloud_api)
 				a_router.handle ("/cloud/plans/", plan_hlr, a_router.methods_get_post)
 				a_router.handle ("/cloud/plans/{pid}", plan_hlr, a_router.methods_get_post)
@@ -161,9 +161,12 @@ feature -- Hooks configuration
 								lic_fset.add_css_style ("margin-bottom: 1em; border: solid 1px blue;")
 								fset.extend (lic_fset)
 								create s.make_empty
-								s.append ("<div class=%"license")
+								s.append ("<div class=%"es-license")
 								if l_license.is_expired then
 									s.append (" expired")
+								end
+								if l_license.is_suspended then
+									s.append (" suspended")
 								end
 								if l_license.is_fallback then
 									s.append (" fallback")
@@ -181,9 +184,12 @@ feature -- Hooks configuration
 									s.append (" until <span class=%"date%">")
 									s.append (date_time_to_string (dt))
 									s.append ("</span>")
-									if l_license.is_expired then
-										s.append (" <span class=%"expired%">(Expired)</span>")
-									end
+								end
+								if l_license.is_suspended then
+									s.append (" <span class=%"status warning suspended%">(Suspended)</span>")
+								end
+								if l_license.is_expired then
+									s.append (" <span class=%"status warning expired%">(Expired)</span>")
 								end
 								if attached l_license.fallback_date as l_fb then
 									s.append (" <span class=%"fallback%">(Fallback since " + date_time_to_string (l_fb) + ")</span>")
@@ -330,6 +336,14 @@ feature -- Hooks configuration
 						a_cloud_api.discard_license (l_lic)
 					elseif attached fd.string_item ("es-lic-op-no-exp-date") then
 						a_cloud_api.remove_expiration_date (l_lic)
+					elseif attached fd.string_item ("es-lic-op-fallback") then
+						if attached fd.string_item ("es-lic-version") as v then
+							a_cloud_api.convert_to_fallback (l_lic, v)
+						else
+--							ERROR: FIXME
+						end
+					elseif attached fd.string_item ("es-lic-op-undo-fallback") then
+						a_cloud_api.undo_convert_to_fallback (l_lic)
 					end
 				end
 			end
@@ -485,6 +499,32 @@ feature -- Hooks configuration
 					end
 
 					create l_submit.make_with_text ("es-lic-op-suspend", "Suspend License")
+					h.extend (l_submit)
+				end
+				if a_license.is_fallback then
+					create h.make
+					h.add_css_class ("horizontal")
+					h.add_css_class ("fallback")
+					lic_fset.extend (h)
+					create l_submit.make_with_text ("es-lic-op-undo-fallback", "Undo FallBack")
+					h.extend (l_submit)
+				elseif
+					a_license.may_be_eligible_to_fallback
+				then
+					create h.make
+					h.add_css_class ("horizontal")
+					h.add_css_class ("may-fallback")
+					lic_fset.extend (h)
+					if attached a_license.version as v then
+						h.extend (create {WSF_FORM_TEXT_INPUT}.make_with_text ("es-lic-version", v))
+					else
+						if attached a_license.version as pv then
+							h.extend (create {WSF_FORM_TEXT_INPUT}.make_with_text ("es-lic-version", pv))
+						else
+							h.extend (create {WSF_FORM_TEXT_INPUT}.make_with_text ("es-lic-version", "Enter a valid version!!!"))
+						end
+					end
+					create l_submit.make_with_text ("es-lic-op-fallback", "Make FallBack")
 					h.extend (l_submit)
 				end
 			else

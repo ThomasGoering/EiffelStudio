@@ -285,6 +285,78 @@ feature -- ROC Account
 			end
 		end
 
+	new_sign_in_request (a_info: detachable READABLE_STRING_GENERAL): detachable ES_CLOUD_SIGN_IN_REQUEST
+		local
+			ctx: HTTP_CLIENT_REQUEST_CONTEXT
+			resp: like response
+			lnk: detachable READABLE_STRING_8
+			l_client_id: IMMUTABLE_STRING_8
+		do
+			reset_api_call
+			if attached new_http_client_session as sess then
+				lnk := jwt_client_sign_in_endpoint (sess)
+				if lnk /= Void then
+					create ctx.make
+					l_client_id := "es-" + {UUID_GENERATOR}.generate_uuid.out
+					ctx.add_form_parameter ("client_id", l_client_id)
+					ctx.add_form_parameter ("information", a_info)
+					ctx.add_form_parameter ("device", "cloud_api_client")
+					resp := response_post (sess, lnk, ctx, Void)
+					if
+						not has_error and then
+						attached resp.string_8_item ("_links|jwt:client_sign_in_link|href") as l_challenge_lnk and then
+						attached resp.string_8_item ("_links|jwt:client_sign_in_request_link|href") as l_request_lnk
+					then
+						create Result.make (l_client_id, l_challenge_lnk, l_request_lnk, resp.date_time_item ("jwt:client_sign_in_expiration_date"))
+					end
+				end
+			end
+		end
+
+	account_using_sign_in_request (rqst: ES_CLOUD_SIGN_IN_REQUEST): detachable ES_ACCOUNT
+		local
+			ctx: HTTP_CLIENT_REQUEST_CONTEXT
+			resp: like response
+			lnk: detachable READABLE_STRING_8
+			acc: ES_ACCOUNT
+		do
+			reset_api_call
+			if attached new_http_client_session as sess then
+				lnk := rqst.sign_in_request_url
+				create ctx.make
+				ctx.add_form_parameter ("client_id", rqst.client_id)
+				resp := response_post (sess, lnk, ctx, Void)
+				if not has_error then
+					if resp.boolean_item_is_true ("denied") then
+						rqst.mark_is_denied
+					elseif resp.boolean_item_is_true ("expired") then
+						rqst.mark_is_expired
+					else
+						create acc.make ("FIXME-sign-in")
+						if attached resp.integer_64_item ("user|uid") as l_uid then
+							acc.set_user_id (l_uid)
+						elseif attached resp.string_32_item ("user|uid") as s_uid then
+							acc.set_user_id (s_uid.to_integer_64)
+						else
+							acc := Void
+						end
+						if acc = Void then
+							rqst.report_error ("missing account information")
+						else
+							if
+								attached jwt_token_from_response (resp) as tok and then
+								attached account (tok.token) as l_updated_account
+							then
+								rqst.mark_is_approved (l_updated_account)
+								l_updated_account.set_access_token (tok)
+								Result := l_updated_account
+							end
+						end
+					end
+				end
+			end
+		end
+
 	discard_token (a_token: READABLE_STRING_8): BOOLEAN
 		local
 			ctx: HTTP_CLIENT_REQUEST_CONTEXT
@@ -411,6 +483,42 @@ feature -- Installation
 						j_info.put_string (pf, "platform")
 					end
 					ctx.add_form_parameter ("info", j_info.representation)
+					resp := response_post (sess, l_installations_href, ctx, Void)
+					if not has_error then
+						if attached resp.string_8_item ("_links|es:installation|href") as v then
+							l_new_installation_href := v
+							record_endpoint_for_token (a_token, "_links|es:installation|href;installation=" + a_installation.id, l_new_installation_href)
+						end
+					end
+					if l_new_installation_href /= Void then
+						ctx := new_jwt_auth_context (a_token)
+
+						resp := response_get (sess, l_new_installation_href, ctx)
+						if not has_error then
+							Result := installation_from_response (resp)
+						end
+					end
+				end
+			end
+		end
+
+	update_installation (a_token: READABLE_STRING_8; a_installation: ES_ACCOUNT_INSTALLATION; a_lic: ES_ACCOUNT_LICENSE): ES_ACCOUNT_INSTALLATION
+		local
+			ctx: HTTP_CLIENT_REQUEST_CONTEXT
+			resp: like response
+			l_installations_href, l_new_installation_href: READABLE_STRING_8
+		do
+			reset_api_call
+			if
+				attached new_http_client_session as sess
+			then
+				ctx := new_jwt_auth_context (a_token)
+
+				l_installations_href := es_account_installations_endpoint_for_token (a_token, sess)
+				if l_installations_href /= Void then
+					ctx.add_form_parameter ("installation_id", a_installation.id)
+					ctx.add_form_parameter ("operation", "update_license")
+					ctx.add_form_parameter ("license_id", a_lic.key)
 					resp := response_post (sess, l_installations_href, ctx, Void)
 					if not has_error then
 						if attached resp.string_8_item ("_links|es:installation|href") as v then
@@ -778,6 +886,33 @@ feature {NONE} -- Endpoints
 
 feature {NONE} -- JWT endpoints
 
+	get_jwt_client_sign_in_endpoint (sess: attached like new_http_client_session)
+		do
+			-- Get `is_available` value.
+			if
+				attached response_get (sess, config.root_endpoint, Void) as resp
+			then
+				if has_error then
+					reset_error
+				else
+					if attached resp.string_8_item ("_links|jwt:client_sign_in|href") as v then
+						record_endpoint ("jwt:client_sign_in", v)
+					end
+				end
+			end
+		end
+
+	jwt_client_sign_in_endpoint (sess: like new_http_client_session): IMMUTABLE_STRING_8
+			-- (export status {NONE})
+		do
+			reset_api_call
+			Result := endpoint ("jwt:client_sign_in")
+			if Result = Void then
+				get_jwt_client_sign_in_endpoint (sess)
+				Result := endpoint ("jwt:client_sign_in")
+			end
+		end
+
 	jwt_access_token_endpoint (sess: HTTP_CLIENT_SESSION; ctx: HTTP_CLIENT_REQUEST_CONTEXT): detachable IMMUTABLE_STRING_8
 		local
 			resp: like response
@@ -972,6 +1107,9 @@ feature {NONE} -- Implementation
 			cl: DEFAULT_HTTP_CLIENT
 		do
 			create cl
+			if attached config.preferred_http_client as pref_cl then
+				cl.force_default_client (pref_cl)
+			end
 			Result := cl.new_session (config.server_url)
 			Result.add_header ("Accept", "application/json,text/html;q=0.9,*.*;q=0.8")
 			if attached config.user_agent as ua then
@@ -1103,6 +1241,9 @@ feature {NONE} -- Json handling
 				if r.boolean_item_is_true ("is_fallback") then
 					Result.set_is_fallback (True)
 				end
+				if r.boolean_item_is_true ("is_suspended") then
+					Result.set_is_suspended (True)
+				end
 				if attached r.integer_64_item ("days_remaining") as l_days_remaining then
 					Result.set_days_remaining (l_days_remaining.to_integer_32)
 				end
@@ -1131,6 +1272,8 @@ feature {NONE} -- Json handling
 	installation_from_response (resp: like response): detachable ES_ACCOUNT_INSTALLATION
 		require
 			no_error: not has_error
+		local
+			lics: ARRAYED_LIST [ES_ACCOUNT_LICENSE]
 		do
 			if attached resp.string_8_item ("es:installation|id") as v then
 				create Result.make_with_id (v)
@@ -1157,6 +1300,22 @@ feature {NONE} -- Json handling
 				attached plan_from_response (r_plan) as l_plan
 			then
 				Result.set_associated_plan (l_plan)
+			end
+			if
+				attached resp.table_item ("es:adapted_licenses") as r_lics and then
+				not r_lics.is_empty
+--				 and then
+--				attached license_from_response (r_lic) as l_lic
+			then
+				create lics.make (r_lics.count)
+				across
+					r_lics as ic
+				loop
+					if attached license_from_response (ic.item) as l_lic then
+						lics.force (l_lic)
+					end
+				end
+				Result.set_adapted_licenses (lics)
 			end
 		end
 
@@ -1222,7 +1381,7 @@ feature {NONE} -- Implementation
 			s: STRING
 			pref: STRING
 		do
-			pref := log_prefix
+			create pref.make_from_string (log_prefix)
 			io.error.put_string (pref)
 			if attached r.status_line as l_status_line then
 				io.error.put_string (l_status_line)
@@ -1251,7 +1410,7 @@ feature {NONE} -- Implementation
 		end
 
 note
-	copyright: "Copyright (c) 1984-2021, Eiffel Software"
+	copyright: "Copyright (c) 1984-2024, Eiffel Software"
 	license: "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[

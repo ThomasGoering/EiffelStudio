@@ -47,6 +47,20 @@ feature {NONE} -- Creation
 				create ua.make_from_string ("EiffelStudio/" + eiffel_layout.version_name)
 				ua.append (" (" + eiffel_layout.eiffel_platform + ")")
 				cfg.set_user_agent (ua)
+
+					-- preferred http client, to workaround some network or security issues.
+				if
+					is_eiffel_layout_defined and then
+					attached eiffel_layout.get_environment_32 ("ES_CLOUD_PREFERRED_HTTP_CLIENT") as v and then
+					not v.is_whitespace
+				then
+					cfg.set_preferred_http_client (v)
+				elseif
+					attached {READABLE_STRING_GENERAL} env.application_item ("preferred_http_client", "es_cloud", eiffel_layout.version_name) as v and then
+					not v.is_whitespace
+				then
+					cfg.set_preferred_http_client (v)
+				end
 				if
 					attached env.application_item ("timeout", "es_cloud", eiffel_layout.version_name) as v and then
 					v.is_integer
@@ -135,6 +149,9 @@ feature {NONE} -- Initialization
 				create installation.make_with_id (s.to_string_8)
 			else
 				create l_id.make_empty
+				if eiffel_layout.is_workbench then
+					l_id.append ("wb.")
+				end
 				l_id.append (env.product_name)
 				l_id.append_character ('_')
 				create syscsts
@@ -619,6 +636,26 @@ feature -- Settings
 		do
 			if attached eiffel_layout.get_environment_8 ("ES_CLOUD_OFFLINE_ALLOWED") as v then
 				Result := v.is_case_insensitive_equal_general ("yes")
+			else
+				Result := False -- Default
+			end
+		end
+
+	is_basic_auth_allowed: BOOLEAN
+		do
+			if attached eiffel_layout.get_environment_8 ("ES_CLOUD_BASIC_AUTH_ALLOWED") as v then
+				Result := v.is_case_insensitive_equal_general ("yes")
+			else
+				Result := True -- Default
+			end
+		end
+
+	is_sign_in_challenge_auth_allowed: BOOLEAN
+		do
+			if attached eiffel_layout.get_environment_8 ("ES_CLOUD_SIGN_IN_ALLOWED") as v then
+				Result := v.is_case_insensitive_equal_general ("yes")
+			else
+				Result := True -- Default
 			end
 		end
 
@@ -676,6 +713,25 @@ feature -- Sign
 			on_account_signed_out (acc)
 		end
 
+	sign_in_with_credential_as_client (a_username: READABLE_STRING_GENERAL; a_password: READABLE_STRING_GENERAL)
+			-- <Precursor>
+		do
+			if attached web_api.account_using_basic_authorization (a_username, a_password) as acc then
+				reset_guest_session
+				active_account := acc
+--				update_account (acc)
+--				store
+				on_account_signed_in (acc)
+			else
+				active_account := Void
+				active_session := Void
+					-- If guest, remains guest.
+				if web_api.has_error then
+					check_cloud_availability
+				end
+			end
+		end
+
 	sign_in_with_credential (a_username: READABLE_STRING_GENERAL; a_password: READABLE_STRING_GENERAL)
 			-- <Precursor>
 		do
@@ -700,6 +756,26 @@ feature -- Sign
 		do
 				-- TODO
 			if attached web_api.account (tok) as acc then
+				active_account := acc
+				reset_guest_session
+				update_account (acc)
+				store
+				on_account_signed_in (acc)
+			else
+				active_account := Void
+				active_session := Void
+					-- If guest, remains guest.
+			end
+		end
+
+	new_cloud_sign_in_request (a_info: detachable READABLE_STRING_GENERAL): detachable ES_CLOUD_SIGN_IN_REQUEST
+		do
+			Result := web_api.new_sign_in_request (a_info)
+		end
+
+	check_cloud_sign_in_request (rqst: ES_CLOUD_SIGN_IN_REQUEST)
+		do
+			if attached web_api.account_using_sign_in_request (rqst) as acc then
 				active_account := acc
 				reset_guest_session
 				update_account (acc)
@@ -952,6 +1028,20 @@ feature -- Updating
 			Result := web_api.account_installations (acc.access_token.token)
 		end
 
+feature -- Installation
+
+	account_installation (acc: ES_ACCOUNT; a_installation_id: READABLE_STRING_GENERAL): detachable ES_ACCOUNT_INSTALLATION
+		do
+			Result := web_api.installation (acc.access_token.token, a_installation_id)
+		end
+
+	update_installation_license (acc: ES_ACCOUNT; a_installation: ES_ACCOUNT_INSTALLATION; a_lic: ES_ACCOUNT_LICENSE)
+		local
+			inst: ES_ACCOUNT_INSTALLATION
+		do
+			inst := web_api.update_installation (acc.access_token.token, a_installation, a_lic)
+		end
+
 feature -- Events
 
 	on_account_signed_in (acc: ES_ACCOUNT)
@@ -1070,6 +1160,7 @@ feature -- Storage
 								session_heartbeat := d.session_heartbeat
 							end
 						end
+						f.close
 					else
 							-- FIXME: should be created at installation... and presence may be mandatory
 							-- to avoid user to delete it ...
@@ -1206,7 +1297,7 @@ feature {NONE} -- Implementation: Internal cache
 invariant
 
 note
-	copyright: "Copyright (c) 1984-2023, Eiffel Software"
+	copyright: "Copyright (c) 1984-2024, Eiffel Software"
 	license: "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[

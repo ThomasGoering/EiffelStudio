@@ -527,13 +527,22 @@ feature -- Deserialization
 		end
 
 	consumed_referenced_type (j: detachable JSON_VALUE): detachable CONSUMED_REFERENCED_TYPE
+		local
+			fpos: INTEGER
 		do
 			if attached {JSON_OBJECT} j as jo then
 				if
 					attached {JSON_STRING} jo [names.name] as jname and then
 					attached {JSON_NUMBER} jo [names.assembly_id] as jid
 				then
-					if attached {JSON_OBJECT} jo [names.element_type] as j_elt_type then
+					if attached {JSON_STRING} jo [names.formal_type_name] as j_formal_type_name then
+						if attached {JSON_NUMBER} jo [names.formal_position] as j_formal_pos then
+							fpos := j_formal_pos.integer_64_item.to_integer_32
+						else
+							fpos := -1
+						end
+						create {CONSUMED_FORMAL_GENERIC_TYPE} Result.make (jname.unescaped_string_8, jid.integer_64_item.to_integer_32, j_formal_type_name.unescaped_string_32, fpos)
+					elseif attached {JSON_OBJECT} jo [names.element_type] as j_elt_type then
 						if attached consumed_referenced_type (j_elt_type) as elt_type then
 							create {CONSUMED_ARRAY_TYPE} Result.make (jname.unescaped_string_8, jid.integer_64_item.to_integer_32, elt_type)
 						else
@@ -619,12 +628,16 @@ feature -- Deserialization
 			args: ARRAYED_LIST [CONSUMED_ARGUMENT]
 			ret: CONSUMED_REFERENCED_TYPE
 			l_type: CONSUMED_REFERENCED_TYPE
+			is_gen: BOOLEAN
 		do
 			if attached {JSON_OBJECT} j as jo then
 				en := jo.string_item (names.eiffel_name)
 				dn := jo.string_item (names.dotnet_name)
 				den := jo.string_item (names.dotnet_eiffel_name)
 				l_type := consumed_referenced_type (jo [names.declared_type])
+				if attached jo.boolean_item (names.is_generic) as jb then
+					is_gen := jb.item
+				end
 				if attached {JSON_ARRAY} jo [names.arguments] as j_args then
 					args := consumed_arguments (j_args)
 				end
@@ -653,6 +666,16 @@ feature -- Deserialization
 						)
 
 					update_consumed_member_from (Result, jo)
+					if is_gen then
+						if
+							attached {JSON_ARRAY} jo.item (names.generic_parameters) as j_generic_parameters and then
+							attached string_array (j_generic_parameters) as strings
+						then
+							Result.set_is_generic (is_gen, strings)
+						else
+							Result.set_is_generic (is_gen, Void)
+						end
+					end
 				else
 					report_error ("Missing value for function")
 				end
@@ -665,11 +688,18 @@ feature -- Deserialization
 			l_type: CONSUMED_REFERENCED_TYPE
 			den: JSON_STRING
 			args: ARRAYED_LIST [CONSUMED_ARGUMENT]
+			is_gen: BOOLEAN
 		do
 			if attached {JSON_OBJECT} j as jo then
 				en := jo.string_item (names.eiffel_name)
 				dn := jo.string_item (names.dotnet_name)
 				den := jo.string_item (names.dotnet_eiffel_name)
+				if attached jo.boolean_item (names.is_generic) as jb then
+					is_gen := jb.item
+				end
+				if is_gen and then attached {JSON_OBJECT} jo.item (names.generic_parameters) as j_generic_parameters then
+
+				end
 
 				if en = Void then
 					if dn /= Void then
@@ -718,6 +748,14 @@ feature -- Deserialization
 							)
 					end
 					update_consumed_member_from (Result, jo)
+					if
+						attached {JSON_ARRAY} jo.item (names.generic_parameters) as j_generic_parameters and then
+						attached string_array (j_generic_parameters) as strings
+					then
+						Result.set_is_generic (is_gen, strings)
+					else
+						Result.set_is_generic (is_gen, Void)
+					end
 				else
 					report_error ("Missing value for procedure")
 				end
@@ -866,7 +904,11 @@ feature -- List
 				if
 					attached consumed_constructor (j) as c
 				then
-					Result.force (c)
+					if c.has_generic then
+						do_nothing
+					else
+						Result.force (c)
+					end
 				else
 					report_error ("Missing or invalid constructor")
 				end
@@ -965,5 +1007,24 @@ feature -- Helpers
 		do
 			Result := attached j.boolean_item (n) as b and then b.item
 		end
+
+	string_array (j: JSON_ARRAY): ARRAY [READABLE_STRING_32]
+		local
+			i: INTEGER
+		do
+			i := 1
+			create Result.make (i, i + j.count - 1)
+			across
+				j as ji
+			loop
+				if attached {JSON_STRING} ji as j_str then
+					Result [i] := j_str.unescaped_string_32
+				else
+					check is_string: False end
+					Result [i] := ""
+				end
+			end
+		end
+
 
 end

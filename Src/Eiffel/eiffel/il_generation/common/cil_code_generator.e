@@ -160,10 +160,10 @@ feature {CIL_CODE_GENERATOR, IL_MODULE} -- Access
 			-- Is current module generated as just a single module?
 			-- Case of precompiled libraries or finalized systems.
 
-feature {NONE} -- Access
-
 	main_module: IL_MODULE
 			-- Module containing assembly manifest.
+
+feature {NONE} -- Access
 
 	current_module: IL_MODULE
 			-- Module being used for code generation.
@@ -481,10 +481,20 @@ feature -- Settings
 			-- `a_class_type' is generated.
 		require
 			a_class_type_not_void: a_class_type /= Void
+		local
+			l_old_module: like current_module
 		do
+			l_old_module := current_module
 			current_module := il_module (a_class_type)
 				-- Refine so that only classes being generated in current compilation
 				-- unit needs the module to be generated as well.
+			debug ("il_emitter")
+				if attached current_module as m then
+					if l_old_module = Void or else l_old_module /= m then
+						print (generator + ".set_current_module_with (...) -> switched to "+ m.module_name_with_extension +"%N")
+					end
+				end
+			end
 			if a_class_type.is_generated and then not current_module.is_generated then
 				current_module.prepare (md_dispenser, type_count)
 			end
@@ -548,7 +558,14 @@ feature -- Generation Structure
 			a_file_name_not_empty: not a_file_name.is_empty
 			location_not_void: location /= Void
 			location_not_empty: not location.is_empty
+		local
+			p: PATH
+			ext: READABLE_STRING_GENERAL
+			l_assembly_name_with_extension: STRING_32
 		do
+				-- For netcore, use multi-assemblies instead of multi-modules.
+			is_using_multi_assemblies := system.is_il_netcore
+
 				--| Initialize recording of IL Information used for eStudio .NET debugger			
 			Il_debug_info_recorder.start_recording_session (debug_mode)
 
@@ -594,11 +611,19 @@ feature -- Generation Structure
 
 			is_debug_info_enabled := debug_mode
 			-- FIXME jfiat [2003/10/10 - 16:41] try without debug_mode, for no pdb info
-
-			output_file_name := location.extended (a_file_name).name
-
+			p := location.extended (a_file_name)
+			output_file_name := p.name
+			ext := p.extension
+			if ext = Void then
+				ext := system.msil_generation_type
+			end
+			if a_assembly_name.to_string_32.ends_with (ext) then
+				l_assembly_name_with_extension := a_assembly_name
+			else
+				l_assembly_name_with_extension := (create {PATH}.make_from_string (a_assembly_name)).appended_with_extension (ext).name
+			end
 			create main_module.make (
-				a_assembly_name,
+				l_assembly_name_with_extension, -- Extension is required
 				output_file_name,
 				c_module_name,
 				a_public_key,
@@ -606,7 +631,7 @@ feature -- Generation Structure
 				assembly_info,
 				1,
 				is_debug_info_enabled,
-				True -- Main assembly
+				True, is_using_multi_assemblies -- Main assembly
 				)
 			current_module := main_module
 			if is_console_application then
@@ -782,6 +807,7 @@ feature -- Generation Structure
 
 					-- Body index is too large. Reallocate array(s).
 					-- All previously stored data have to be preserved.
+
 					-- Reallocate "string[][]".
 				method_body.put_opcode ({MD_OPCODES}.ldarg_0)
 				put_integer_32_constant (1)
@@ -791,6 +817,7 @@ feature -- Generation Structure
 				method_body.put_opcode_mdtoken ({MD_OPCODES}.stsfld, oms_field_cil_token)
 				method_body.put_opcode ({MD_OPCODES}.ldloc_0)
 				method_body.put_static_call (array_copy_method_token, 3, False)
+
 					-- Reallocate "STRING[][]".
 				method_body.put_opcode_mdtoken ({MD_OPCODES}.ldsfld, oms_field_eiffel_token)
 				method_body.put_opcode ({MD_OPCODES}.ldarg_0)
@@ -805,6 +832,7 @@ feature -- Generation Structure
 				method_body.put_opcode_mdtoken ({MD_OPCODES}.stsfld, oms_field_eiffel_token)
 				method_body.put_opcode ({MD_OPCODES}.ldloc_0)
 				method_body.put_static_call (array_copy_method_token, 3, False)
+
 					-- Reallocate "STRING_32[][]".
 				method_body.put_opcode_mdtoken ({MD_OPCODES}.ldsfld, oms_32_field_eiffel_token)
 				method_body.put_opcode ({MD_OPCODES}.ldarg_0)
@@ -819,6 +847,22 @@ feature -- Generation Structure
 				method_body.put_opcode_mdtoken ({MD_OPCODES}.stsfld, oms_32_field_eiffel_token)
 				method_body.put_opcode ({MD_OPCODES}.ldloc_0)
 				method_body.put_static_call (array_copy_method_token, 3, False)
+
+					-- Reallocate "IMMUTABLE_STRING_8[][]".
+				method_body.put_opcode_mdtoken ({MD_OPCODES}.ldsfld, omis_8_field_eiffel_token)
+				method_body.put_opcode ({MD_OPCODES}.ldarg_0)
+				put_integer_32_constant (1)
+				method_body.put_opcode ({MD_OPCODES}.add)
+				type_sig.reset
+				type_sig.set_type ({MD_SIGNATURE_CONSTANTS}.element_type_szarray, 0)
+				type_sig.set_type ({MD_SIGNATURE_CONSTANTS}.element_type_class, current_module.actual_class_type_token (immutable_string_8_type_id))
+				oms_array_type_eiffel_token := helper_emit.define_type_spec (type_sig)
+				method_body.put_opcode_mdtoken ({MD_OPCODES}.newarr, oms_array_type_eiffel_token)
+				method_body.put_opcode ({MD_OPCODES}.dup)
+				method_body.put_opcode_mdtoken ({MD_OPCODES}.stsfld, omis_8_field_eiffel_token)
+				method_body.put_opcode ({MD_OPCODES}.ldloc_0)
+				method_body.put_static_call (array_copy_method_token, 3, False)
+
 					-- Reallocate "IMMUTABLE_STRING_32[][]".
 				method_body.put_opcode_mdtoken ({MD_OPCODES}.ldsfld, omis_32_field_eiffel_token)
 				method_body.put_opcode ({MD_OPCODES}.ldarg_0)
@@ -889,6 +933,7 @@ feature -- Generation Structure
 			l_uni_string: CLI_STRING
 			l_module: IL_MODULE
 			l_file_token: INTEGER
+			l_assembly_ref_token: INTEGER
 		do
 			current_module := main_module
 
@@ -910,34 +955,59 @@ feature -- Generation Structure
 						if l_type.is_generated and then not l_class.is_typed_pointer then
 							l_module := il_module (l_type)
 
-							file_token.search (l_module)
-							if file_token.found then
-								l_file_token := file_token.found_item
+							if is_using_multi_assemblies then
+								l_assembly_ref_token := main_module.module_reference_token (l_module)
+
+								l_uni_string.set_string (l_type.full_il_type_name)
+								md_emit.define_exported_type (l_uni_string, l_assembly_ref_token,
+									l_type.last_type_token, {MD_TYPE_ATTRIBUTES}.Public).do_nothing
+
+								if l_type.implementation_id /= l_type.static_type_id then
+									l_uni_string.set_string (l_type.full_il_implementation_type_name)
+									md_emit.define_exported_type (l_uni_string, l_assembly_ref_token,
+										l_type.last_implementation_type_token,
+										{MD_TYPE_ATTRIBUTES}.Public).do_nothing
+								end
+
+								if
+									not l_class.is_deferred and
+									(attached l_class.creators as cs implies not cs.is_empty)
+								then
+									l_uni_string.set_string (l_type.full_il_create_type_name)
+									md_emit.define_exported_type (l_uni_string, l_assembly_ref_token,
+										l_type.last_create_type_token, {MD_TYPE_ATTRIBUTES}.Public).do_nothing
+								end
+
 							else
-								l_file_token := define_file (main_module,
-									l_module.module_file_name, l_module.module_name,
-									{MD_FILE_FLAGS}.Has_meta_data, a_signing)
-								file_token.put (l_file_token, l_module)
-							end
+								file_token.search (l_module)
+								if file_token.found then
+									l_file_token := file_token.found_item
+								else
+									l_file_token := define_file (main_module,
+										l_module.module_file_name, l_module.module_name_with_extension,
+										{MD_FILE_FLAGS}.Has_meta_data, a_signing)
+									file_token.put (l_file_token, l_module)
+								end
 
-							l_uni_string.set_string (l_type.full_il_type_name)
-							md_emit.define_exported_type (l_uni_string, l_file_token,
-								l_type.last_type_token, {MD_TYPE_ATTRIBUTES}.Public).do_nothing
-
-							if l_type.implementation_id /= l_type.static_type_id then
-								l_uni_string.set_string (l_type.full_il_implementation_type_name)
+								l_uni_string.set_string (l_type.full_il_type_name)
 								md_emit.define_exported_type (l_uni_string, l_file_token,
-									l_type.last_implementation_type_token,
-									{MD_TYPE_ATTRIBUTES}.Public).do_nothing
-							end
+									l_type.last_type_token, {MD_TYPE_ATTRIBUTES}.Public).do_nothing
 
-							if
-								not l_class.is_deferred and
-								(attached l_class.creators as cs implies not cs.is_empty)
-							then
-								l_uni_string.set_string (l_type.full_il_create_type_name)
-								md_emit.define_exported_type (l_uni_string, l_file_token,
-									l_type.last_create_type_token, {MD_TYPE_ATTRIBUTES}.Public).do_nothing
+								if l_type.implementation_id /= l_type.static_type_id then
+									l_uni_string.set_string (l_type.full_il_implementation_type_name)
+									md_emit.define_exported_type (l_uni_string, l_file_token,
+										l_type.last_implementation_type_token,
+										{MD_TYPE_ATTRIBUTES}.Public).do_nothing
+								end
+
+								if
+									not l_class.is_deferred and
+									(attached l_class.creators as cs implies not cs.is_empty)
+								then
+									l_uni_string.set_string (l_type.full_il_create_type_name)
+									md_emit.define_exported_type (l_uni_string, l_file_token,
+										l_type.last_create_type_token, {MD_TYPE_ATTRIBUTES}.Public).do_nothing
+								end
 							end
 						end
 					end
@@ -2576,13 +2646,23 @@ feature -- Features info
 
 				if is_static and l_is_c_external then
 						-- Let's define Pinvoke here.
+						-- The COM interface updates the method definition attributes behind the scenes,
+						-- so it is not necessary to update the method attribute with p_invoke_implementation.
+						-- However, with IL_EMITTER, we need to explicitly update the method attribute
+						-- with p_invoke_implementation.
+					if system.is_il_netcore then
+						l_meth_attr :=  l_meth_attr | {MD_METHOD_ATTRIBUTES}.pinvoke_implementation
+					end
+
 					l_meth_token := md_emit.define_method (uni_string, current_class_token,
-						l_meth_attr, l_meth_sig, {MD_METHOD_ATTRIBUTES}.Managed |
-						{MD_METHOD_ATTRIBUTES}.Preserve_sig)
+											l_meth_attr, l_meth_sig, {MD_METHOD_ATTRIBUTES}.Managed |
+											{MD_METHOD_ATTRIBUTES}.Preserve_sig)
+
 					md_emit.define_pinvoke_map (l_meth_token,
 						{MD_PINVOKE_CONSTANTS}.Charset_ansi |
 						{MD_PINVOKE_CONSTANTS}.Stdcall, uni_string,
 						current_module.c_module_token)
+
 				else
 						-- Normal method
 					l_meth_token := md_emit.define_method (uni_string, current_class_token,
@@ -3469,7 +3549,7 @@ feature -- IL Generation
 				runtime_class_name,
 				"standard_copy", Static_type,
 				<<system_object_class_name, system_object_class_name>>,
-				Void, False)
+				Void, False, Void)
 		end
 
 	generate_object_equality_test
@@ -3479,7 +3559,7 @@ feature -- IL Generation
 				runtime_class_name,
 				"is_equal", Static_type,
 				<<system_object_class_name, system_object_class_name>>,
-				"System.Boolean", False)
+				"System.Boolean", False, Void)
 		end
 
 	generate_same_type_test
@@ -3491,7 +3571,7 @@ feature -- IL Generation
 				runtime_class_name,
 				"same_type", Static_type,
 				<<system_object_class_name, system_object_class_name>>,
-				"System.Boolean", False)
+				"System.Boolean", False, Void)
 		end
 
 	start_new_body (method_token: INTEGER)
@@ -3847,7 +3927,22 @@ feature -- IL Generation
 			l_type_token := current_module.external_token_mapping (base_name)
 			internal_generate_external_call (0, l_type_token, Void, name, ext_kind,
 					Names_heap.convert_to_string_array (parameters_type),
-					Names_heap.item (return_type), is_virtual)
+					Names_heap.item (return_type), is_virtual, Void)
+		end
+
+	generate_external_generic_call (base_name: STRING; name: STRING; ext_kind: INTEGER;
+			parameters_type: ARRAY [INTEGER]; generic_method_parameters_info: CONSUMED_GENERIC_PARAMETERS_INFO;
+			return_type: INTEGER;
+			is_virtual: BOOLEAN)
+
+			-- Generate generic method call to `name' with signature `parameters_type' + `return_type'.
+		local
+			l_type_token: INTEGER
+		do
+			l_type_token := current_module.external_token_mapping (base_name)
+			internal_generate_external_call (0, l_type_token, Void, name, ext_kind,
+					Names_heap.convert_to_string_array (parameters_type),
+					Names_heap.item (return_type), is_virtual, generic_method_parameters_info)
 		end
 
 	generate_external_creation_call (a_actual_type: CL_TYPE_A; name: STRING; ext_kind: INTEGER;
@@ -3869,7 +3964,7 @@ feature -- IL Generation
 			end
 			internal_generate_external_call (0, l_type_token, Void, name, ext_kind,
 					l_argument_types,
-					Names_heap.item (return_type), False)
+					Names_heap.item (return_type), False, Void)
 		end
 
 	external_token (base_name: STRING; member_name: STRING; ext_kind: INTEGER;
@@ -3954,19 +4049,23 @@ feature -- IL Generation
 	internal_generate_external_call (an_assembly_token, a_type_token: INTEGER; base_name: STRING;
 			member_name: STRING; ext_kind: INTEGER;
 			parameters_string: ARRAY [STRING]; return_type: STRING;
-			is_virtual: BOOLEAN)
+			is_virtual: BOOLEAN; generic_method_parameters_info: detachable CONSUMED_GENERIC_PARAMETERS_INFO;)
 
 			-- Generate call to `member_name' with signature `parameters_type' + `return_type'.
 		require
 			valid_external_type: valid_type (ext_kind)
 		local
+			l_member_ref_token: INTEGER
 			l_token: INTEGER
 			l_meth_sig: like method_sig
 			l_field_sig: like field_sig
 			l_class_token: INTEGER
-			i, nb: INTEGER
+			i, gen_i, nb: INTEGER
 			l_context_class_type: CLASS_TYPE
+			p: CONSUMED_PROCEDURE
+			is_generic_method: BOOLEAN
 		do
+			is_generic_method := generic_method_parameters_info /= Void and then generic_method_parameters_info.has_generic
 			l_context_class_type := current_class_type
  			if base_name /= Void then
  				uni_string.set_string (base_name)
@@ -3981,11 +4080,11 @@ feature -- IL Generation
 				l_field_sig.reset
 				set_type_in_signature (l_field_sig, return_type, l_context_class_type)
 				uni_string.set_string (member_name)
-				l_token := md_emit.define_member_ref (uni_string, l_class_token, l_field_sig)
+				l_member_ref_token := md_emit.define_member_ref (uni_string, l_class_token, l_field_sig)
 				if ext_kind = field_type then
-					method_body.put_opcode_mdtoken ({MD_OPCODES}.Ldfld, l_token)
+					method_body.put_opcode_mdtoken ({MD_OPCODES}.Ldfld, l_member_ref_token)
 				else
-					method_body.put_opcode_mdtoken ({MD_OPCODES}.Ldsfld, l_token)
+					method_body.put_opcode_mdtoken ({MD_OPCODES}.Ldsfld, l_member_ref_token)
 				end
 			when Set_field_type, Set_static_field_type then
 				l_field_sig := field_sig
@@ -3997,11 +4096,11 @@ feature -- IL Generation
 					-- Type of field is actually the first argument of our setter routine.
 				set_type_in_signature (l_field_sig, parameters_string.item (1), l_context_class_type)
 				uni_string.set_string (member_name)
-				l_token := md_emit.define_member_ref (uni_string, l_class_token, l_field_sig)
+				l_member_ref_token := md_emit.define_member_ref (uni_string, l_class_token, l_field_sig)
 				if ext_kind = set_field_type then
-					method_body.put_opcode_mdtoken ({MD_OPCODES}.Stfld, l_token)
+					method_body.put_opcode_mdtoken ({MD_OPCODES}.Stfld, l_member_ref_token)
 				else
-					method_body.put_opcode_mdtoken ({MD_OPCODES}.Stsfld, l_token)
+					method_body.put_opcode_mdtoken ({MD_OPCODES}.Stsfld, l_member_ref_token)
 				end
 			else
 				l_meth_sig := method_sig
@@ -4009,8 +4108,15 @@ feature -- IL Generation
 				if ext_kind = Static_type or ext_kind = Operator_type then
 					l_meth_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.Default_sig)
 				else
-					l_meth_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.Has_current)
+					-- TODO: first check with this case, then try for static, ...
+					if is_generic_method then
+						l_meth_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.Has_current | {MD_SIGNATURE_CONSTANTS}.generic_sig)
+						l_meth_sig.set_generic_parameter_count (if attached generic_method_parameters_info then generic_method_parameters_info.generic_parameters.count else 0 end)
+					else
+						l_meth_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.Has_current)
+					end
 				end
+
 
 				if parameters_string /= Void then
 					nb := parameters_string.count
@@ -4020,20 +4126,44 @@ feature -- IL Generation
 
 					-- Set return type if any in `l_meth_sig'.
 				if return_type /= Void then
-					set_type_in_signature (l_meth_sig, return_type, l_context_class_type)
+					if generic_method_parameters_info /= Void and then attached generic_method_parameters_info.generic_return_type_info as rt_gen_info then
+						set_generic_parameter_type_in_signature (l_meth_sig, rt_gen_info.formal_position, l_context_class_type)
+					else
+						set_type_in_signature (l_meth_sig, return_type, l_context_class_type)
+					end
 				else
 					l_meth_sig.set_return_type ({MD_SIGNATURE_CONSTANTS}.Element_type_void, 0)
 				end
 
 					-- Set arguments in `l_meth_sig'.
-				from
-					i := 1
-				until
-					i > nb
-				loop
-					set_type_in_signature (l_meth_sig, parameters_string.item (i), l_context_class_type)
-					i := i + 1
-				end
+--				if is_generic_method then
+--					-- FIXME: not all parameters are generic/formal !
+--					from
+--						i := 1
+--					until
+--						i > nb
+--					loop
+--						set_generic_parameter_type_in_signature (l_meth_sig, i, l_context_class_type)
+--						i := i + 1
+--					end
+--				else
+					from
+						i := 1
+					until
+						i > nb
+					loop
+						if
+							is_generic_method and then
+							generic_method_parameters_info /= Void and then
+							attached generic_method_parameters_info.generic_argument_info (i) as l_arg_info
+						then
+							set_generic_parameter_type_in_signature (l_meth_sig, l_arg_info.formal_position, l_context_class_type)
+						else
+							set_type_in_signature (l_meth_sig, parameters_string.item (i), l_context_class_type)
+						end
+						i := i + 1
+					end
+--				end
 
 				if member_name = Void then
 					uni_string.set_string (".ctor")
@@ -4041,7 +4171,44 @@ feature -- IL Generation
 					uni_string.set_string (member_name)
 				end
 
-				l_token := md_emit.define_member_ref (uni_string, l_class_token, l_meth_sig)
+				l_member_ref_token := md_emit.define_member_ref (uni_string, l_class_token, l_meth_sig)
+
+				if is_generic_method and then generic_method_parameters_info /= Void then
+						-- Use a MethodSpec token instead of MemberRef token.
+					create l_meth_sig.make
+					l_meth_sig.set_method_type ({MD_SIGNATURE_CONSTANTS}.GENRICINST_sig)
+					if attached generic_method_parameters_info.generic_parameters as l_gen_params then
+						l_meth_sig.set_parameter_count (l_gen_params.count)
+						from
+							i := 1
+						until
+							i > l_gen_params.count
+						loop
+							set_type_in_signature (l_meth_sig, system_object_class_name, l_context_class_type) --FIXME: no hard coded System.Object !!!
+							i := i + 1
+						end
+					elseif parameters_string /= Void and then not parameters_string.is_empty then
+						nb := parameters_string.count
+						l_meth_sig.set_parameter_count (generic_method_parameters_info.generic_arguments_count)
+
+						from
+							i := 1
+						until
+							i > nb
+						loop
+							if generic_method_parameters_info.is_generic_argument (i) then
+								set_type_in_signature (l_meth_sig, parameters_string.item (i), l_context_class_type)
+							end
+							i := i + 1
+						end
+					else
+						l_meth_sig.set_parameter_count (0)
+					end
+
+					l_token := md_emit.define_method_spec (l_member_ref_token, l_meth_sig)
+				else
+					l_token := l_member_ref_token
+				end
 
 				inspect ext_kind
 				when Creator_call_type then
@@ -4151,6 +4318,15 @@ feature {NONE} -- Implementation
 			end
 		end
 
+	set_generic_parameter_type_in_signature (a_sig: MD_SIGNATURE; a_generic_param_index: INTEGER; a_context_type: CLASS_TYPE)
+			-- Set formal type for 0-based index `a_generic_param_index' into `a_sig'.
+		require
+			a_sig_not_void: a_sig /= Void
+			a_generic_param_index_valid: a_generic_param_index >= 0
+		do
+			a_sig.set_generic_parameter_type ({MD_SIGNATURE_CONSTANTS}.element_type_mvar, a_generic_param_index)
+		end
+
 feature -- Local variable info generation
 
 	set_local_count (a_count: INTEGER)
@@ -4249,8 +4425,7 @@ feature -- Object creation
 			internal_generate_external_call (current_module.ise_runtime_token, 0,
 				generic_conformance_class_name,
 				"create_like_object", Static_type, <<type_info_class_name>>,
-				type_info_class_name,
-				False)
+				type_info_class_name, False, Void)
 		end
 
 	load_type
@@ -4260,7 +4435,7 @@ feature -- Object creation
 				generic_conformance_class_name,
 				"load_type_of_object", Static_type, <<system_object_class_name>>,
 				type_class_name,
-				False)
+				False, Void)
 		end
 
 	create_type
@@ -4271,7 +4446,7 @@ feature -- Object creation
 				generic_conformance_class_name,
 				"create_type", Static_type, <<type_class_name,
 				type_info_class_name>>, type_info_class_name,
-				False)
+				False, Void)
 		end
 
 	create_expanded_object (t: CL_TYPE_A)
@@ -4336,7 +4511,7 @@ feature {NONE} -- Object creation
 			internal_generate_external_call (current_module.ise_runtime_token,
 				generic_type_token, Void,
 				"evaluated_type", normal_type, <<generic_type_class_name>>,
-				type_class_name, True)
+				type_class_name, True, Void)
 			if is_verifiable then
 				method_body.put_opcode_mdtoken ({MD_OPCODES}.castclass, generic_type_token)
 			end
@@ -4587,7 +4762,7 @@ feature -- Variables access
 			internal_generate_external_call (current_module.mscorlib_token, 0,
 				system_type_class_name, "GetTypeFromHandle",
 				static_type, << type_handle_class_name >>,
-				system_type_class_name, False)
+				system_type_class_name, False, Void)
 		end
 
 	put_method_token (type_i: TYPE_A; a_feature_id: INTEGER)
@@ -4910,13 +5085,48 @@ feature -- Assignments
 		local
 			l_token: INTEGER
 			l_type: TYPE_A
+			l_type_var, l_obj_var: INTEGER
 		do
 			l_type := type_i.actual_type
 
-			if l_type.is_none or l_type.is_formal then
+			if l_type.is_none then
 					-- Nothing to be done because those types are mapped to
 					-- System.Object the ancestor to all objects. So we
 					-- simply preserve the value on the stack.
+			elseif l_type.is_formal and then attached {FORMAL_A} l_type as l_formal_type then
+					-- Nothing to be done because those types are mapped to
+					-- System.Object the ancestor to all objects. So we
+					-- simply preserve the value on the stack.
+				byte_context.add_local (system_object_type)
+				l_obj_var := byte_context.local_list.count
+				put_dummy_local_info (system_object_type, l_obj_var)
+				generate_local_assignment (l_obj_var)
+				if
+					attached current_class.formal_at_position (l_formal_type.position) as l_type_feature_i
+				then
+					generate_current
+					generate_type_feature_call (l_type_feature_i)
+					generate_local (l_obj_var)
+					internal_generate_external_call (current_module.ise_runtime_token, 0, Runtime_class_name.as_string_8,
+							"attempted_on_rt_type", Static_type, <<System_object_class_name.as_string_8, type_class_name, System_object_class_name>>, System_object_class_name,
+							True, Void)
+				else
+					generate_current
+					put_integer_32_constant (l_formal_type.position)
+					internal_generate_external_call (current_module.ise_runtime_token, 0, Runtime_class_name.as_string_8,
+							"type_of_generic_parameter", Static_type, <<System_object_class_name.as_string_8, "System.Int32">>, system_type_class_name,
+							False, Void)
+
+					generate_local (l_obj_var)
+					internal_generate_external_call (current_module.ise_runtime_token, 0, Runtime_class_name.as_string_8,
+							"attempted_on_type", Static_type, <<System_type_class_name.as_string_8, System_object_class_name>>, System_object_class_name,
+							True, Void)
+				end
+				put_void
+				method_body.put_opcode ({MD_OPCODES}.Ceq)
+				method_body.put_opcode ({MD_OPCODES}.Ldc_i4_0)
+				method_body.put_opcode ({MD_OPCODES}.Ceq)
+
 			else
 					-- We use `mapped_class_type_token' because if we do:
 					-- a: ANY
@@ -5967,7 +6177,7 @@ feature -- Array manipulation
 				generic_conformance_class_name,
 				"create_array", Static_type, <<integer_32_class_name, type_class_name,
 				type_info_class_name, type_handle_class_name>>, system_object_class_name,
-				False)
+				False, Void)
 		end
 
 	generate_array_count
@@ -6159,11 +6369,11 @@ feature -- Assertions
 					-- Type is evaluated at run time.
 				generate_current
 				internal_generate_external_call (current_module.mscorlib_token, 0, System_object_class_name,
-					"GetType", Normal_type, <<>>, System_type_class_name, False)
+					"GetType", Normal_type, <<>>, System_type_class_name, False, Void)
 			end
 			internal_generate_external_call (current_module.ise_runtime_token, 0,
 				runtime_class_name, "save_supplier_precondition", Static_type,
-				<<System_type_class_name>>, "System.Boolean", False)
+				<<System_type_class_name>>, "System.Boolean", False, Void)
 		end
 
 	generate_restore_supplier_precondition
@@ -6171,7 +6381,7 @@ feature -- Assertions
 		do
 			internal_generate_external_call (current_module.ise_runtime_token, 0,
 				runtime_class_name, "restore_supplier_precondition", Static_type,
-				<<"System.Boolean">>, Void, False)
+				<<"System.Boolean">>, Void, False, Void)
 		end
 
 	generate_is_assertion_checked (level: INTEGER)
@@ -6184,13 +6394,13 @@ feature -- Assertions
 					-- Type is evaluated at run time.
 				generate_current
 				internal_generate_external_call (current_module.mscorlib_token, 0, System_object_class_name,
-					"GetType", Normal_type, <<>>, System_type_class_name, False)
+					"GetType", Normal_type, <<>>, System_type_class_name, False, Void)
 			end
 			put_integer_32_constant (level)
 			generate_local (byte_context.saved_supplier_precondition)
 			internal_generate_external_call (current_module.ise_runtime_token, 0,
 				runtime_class_name, "is_assertion_checked", Static_type,
-				<<System_type_class_name, Assertion_level_enum_class_name, "System.Boolean">>, "System.Boolean", False)
+				<<System_type_class_name, Assertion_level_enum_class_name, "System.Boolean">>, "System.Boolean", False, Void)
 		end
 
 	generate_set_assertion_status
@@ -6895,10 +7105,10 @@ feature -- Binary operator generation
 
 			if is_real_32 then
 				internal_generate_external_call (current_module.ise_runtime_token, current_module.ise_runtime_type_token,
-					Void, l_routine_name, static_type, <<"System.Single", "System.Single">>, l_return_type, False)
+					Void, l_routine_name, static_type, <<"System.Single", "System.Single">>, l_return_type, False, Void)
 			else
 				internal_generate_external_call (current_module.ise_runtime_token, current_module.ise_runtime_type_token,
-					Void, l_routine_name, static_type, <<"System.Double", "System.Double">>, l_return_type, False)
+					Void, l_routine_name, static_type, <<"System.Double", "System.Double">>, l_return_type, False, Void)
 			end
 
 			if a_code = il_ne then
@@ -7263,7 +7473,7 @@ feature -- Convenience
 			internal_generate_external_call (current_module.ise_runtime_token, 0,
 				runtime_class_name,
 				"generate_call_on_void_target_exception",
-				static_type, <<>>, Void, False)
+				static_type, <<>>, Void, False, Void)
 		end
 
 feature -- Generic conformance
@@ -7286,7 +7496,7 @@ feature -- Generic conformance
 			put_type_token (l_cl_type_id)
 			internal_generate_external_call (current_module.ise_runtime_token, 0,
 				class_type_class_name,
-				"set_type", Normal_type, <<type_handle_class_name>>, Void, True)
+				"set_type", Normal_type, <<type_handle_class_name>>, Void, True, Void)
 		end
 
 	generate_generic_type_instance (n: INTEGER)
@@ -7312,13 +7522,13 @@ feature -- Generic conformance
 		do
 			internal_generate_external_call (current_module.ise_runtime_token, 0,
 				generic_type_class_name,
-				"set_generics", Normal_type, <<type_array_class_name>>, Void, True);
+				"set_generics", Normal_type, <<type_array_class_name>>, Void, True, Void);
 
 			duplicate_top
 			put_type_token (gen_type.implementation_id (current_class_type.type))
 			internal_generate_external_call (current_module.ise_runtime_token, 0,
 				generic_type_class_name,
-				"set_type", Normal_type, <<type_handle_class_name>>, Void, True)
+				"set_type", Normal_type, <<type_handle_class_name>>, Void, True, Void)
 		end
 
 	generate_none_type_instance
@@ -7431,7 +7641,7 @@ feature {NONE} -- Implementation: generation
 				internal_generate_external_call (current_module.ise_runtime_token, 0,
 					formal_type_class_name,
 					"set_position",
-					Normal_type, <<integer_32_class_name>>, Void, True)
+					Normal_type, <<integer_32_class_name>>, Void, True, Void)
 			elseif l_type_id = none_type_id then
 					-- Nothing to be done, it is enough to create an instance of NONE_TYPE
 			elseif l_type_id = class_type_id then
@@ -7440,7 +7650,7 @@ feature {NONE} -- Implementation: generation
 				put_type_token (l_cl_type.implementation_id (current_class_type.type))
 				internal_generate_external_call (current_module.ise_runtime_token, 0,
 					class_type_class_name,
-					"set_type", Normal_type, <<type_handle_class_name>>, Void, True)
+					"set_type", Normal_type, <<type_handle_class_name>>, Void, True, Void)
 			elseif l_type_id = basic_type_id then
 				duplicate_top
 					-- Make sure to use `external_id' like in `generate_class_type_instance'
@@ -7448,7 +7658,7 @@ feature {NONE} -- Implementation: generation
 				put_type_token (l_cl_type.external_id (current_class_type.type))
 				internal_generate_external_call (current_module.ise_runtime_token, 0,
 					basic_type_class_name,
-					"set_type", Normal_type, <<type_handle_class_name>>, Void, True)
+					"set_type", Normal_type, <<type_handle_class_name>>, Void, True, Void)
 			else
 				duplicate_top
 
@@ -7473,12 +7683,12 @@ feature {NONE} -- Implementation: generation
 
 				internal_generate_external_call (current_module.ise_runtime_token, 0,
 					generic_type_class_name,
-					"set_generics", normal_type, <<type_array_class_name>>, Void, True)
+					"set_generics", normal_type, <<type_array_class_name>>, Void, True, Void)
 				duplicate_top
 				put_type_token (l_gen_type.implementation_id (current_class_type.type))
 				internal_generate_external_call (current_module.ise_runtime_token, 0,
 					generic_type_class_name,
-					"set_type", normal_type, <<type_handle_class_name>>, Void, True)
+					"set_type", normal_type, <<type_handle_class_name>>, Void, True, Void)
 			end
 			generate_return (True)
 			method_writer.write_current_body
@@ -7496,6 +7706,12 @@ feature {CIL_CODE_GENERATOR} -- Implementation: convenience
 			-- Type of Object object
 		once
 			Result := System.system_object_class.compiled_class.types.first.type
+		end
+
+	system_type_type: TYPE_A
+			-- Type of Type object
+		once
+			Result := System.system_type_class.compiled_class.types.first.type
 		end
 
 	string_type: TYPE_A
@@ -7840,6 +8056,23 @@ feature -- Once per feature definition
 
 feature -- Mapping between Eiffel compiler and generated tokens
 
+	is_using_multi_assemblies: BOOLEAN
+			-- Use multi-assemblies instead of multi-modules for workbench compilation.
+
+	il_module_file_name (a_id: INTEGER): STRING
+		do
+			if is_using_multi_assemblies then
+				Result := "assembly_"
+				if a_id < 10 then
+					Result.append_character ('0')
+				end
+			else
+				Result := "module_"
+			end
+			Result.append (a_id.out)
+			Result.append (".dll")
+		end
+
 	il_module_for_class (a_class: CLASS_C): IL_MODULE
 			-- Perform lookup for module associated with `a_class'. If not
 			-- found then create a module used for reference only.
@@ -7856,7 +8089,7 @@ feature -- Mapping between Eiffel compiler and generated tokens
 			end
 			Result := internal_il_modules.item (l_type_id)
 			if Result = Void then
-				l_module_name := "module_" + l_type_id.out + ".dll"
+				l_module_name := il_module_file_name (l_type_id)
 				create Result.make (
 					l_module_name,
 					location_path.extended (l_module_name).name,
@@ -7866,7 +8099,8 @@ feature -- Mapping between Eiffel compiler and generated tokens
 					Void,
 					l_type_id,
 					is_debug_info_enabled,
-					False)
+					False,
+					is_using_multi_assemblies)
 				internal_il_modules.put (Result, l_type_id)
 			end
 		ensure

@@ -61,6 +61,7 @@ feature -- Debug Operation
 			make_f: PLAIN_TEXT_FILE
 			l_il_env: IL_ENVIRONMENT
 			l_app_string: like safe_path
+			l_app_name: PATH
 			is_dotnet_system: BOOLEAN
 			prefstr: STRING
 			dotnet_debugger: READABLE_STRING_32
@@ -86,43 +87,54 @@ feature -- Debug Operation
 						io.error.put_string (generator)
 						io.error.put_string ("(DEBUG_RUN): Start execution%N")
 					end
-
-					create uf.make_with_path (eiffel_system.application_name (True))
+					l_app_name := eiffel_system.application_name (True)
+					if eiffel_system.system.is_il_netcore and not {PLATFORM}.is_windows then
+						l_app_name := l_app_name.appended_with_extension ("exe")
+					end
+					create uf.make_with_path (l_app_name)
 					create make_f.make_with_path (project_location.workbench_path.extended (makefile_sh))
+
 
 					is_dotnet_system := Eiffel_system.system.il_generation
 					if uf.exists then
 						if is_dotnet_system then
-								--| String indicating the .NET debugger to launch if specified in the
-								--| Preferences Tool.
-							dotnet_debugger := manager.dotnet_debugger
-
 							create l_il_env.make (Eiffel_system.System.clr_runtime_version)
-							if dotnet_debugger /= Void and then attached l_il_env.dotnet_debugger_path (dotnet_debugger) as l_app_path then
-								l_app_string := safe_path (l_app_path.name)
-							end
-							if l_app_string /= Void then
-									--| This means we are using either dbgclr or cordbg
-								if not manager.execution_ignoring_breakpoints then
-										--| With BP
-									if l_il_env.use_cordbg (dotnet_debugger) then
-											-- Launch cordbg.exe.
-										(create {COMMAND_EXECUTOR}).execute_with_args
-											(l_app_string,
-												safe_path (eiffel_system.application_name (True).name) + " " + param.arguments)
-										launch_program := True
-									elseif l_il_env.use_dbgclr (dotnet_debugger) then
-											-- Launch DbgCLR.exe.
-										(create {COMMAND_EXECUTOR}).execute_with_args
-											(l_app_string,
-												safe_path (eiffel_system.application_name (True).name))
+							if eiffel_system.system.is_il_netcore then
+									-- TODO: for now Eiffel NETCORE has no support for debug execution
+									-- so launch the workbench app outside the IDE.
+								start_workbench_application (param)
+								launch_program := True
+							else
+									--| String indicating the .NET debugger to launch if specified in the
+									--| Preferences Tool.
+								dotnet_debugger := manager.dotnet_debugger
+
+								if dotnet_debugger /= Void and then attached l_il_env.dotnet_debugger_path (dotnet_debugger) as l_app_path then
+									l_app_string := safe_path (l_app_path.name)
+								end
+								if l_app_string /= Void then
+										--| This means we are using either dbgclr or cordbg
+									if not manager.execution_ignoring_breakpoints then
+											--| With BP
+										if l_il_env.use_cordbg (dotnet_debugger) then
+												-- Launch cordbg.exe.
+											(create {COMMAND_EXECUTOR}).execute_with_args
+												(l_app_string,
+													safe_path (eiffel_system.application_name (True).name) + " " + param.arguments)
+											launch_program := True
+										elseif l_il_env.use_dbgclr (dotnet_debugger) then
+												-- Launch DbgCLR.exe.
+											(create {COMMAND_EXECUTOR}).execute_with_args
+												(l_app_string,
+													safe_path (eiffel_system.application_name (True).name))
+											launch_program := True
+										end
+									else
+											--| Without BP, we just launch the execution as it is
+										(create {COMMAND_EXECUTOR}).execute_with_args (eiffel_system.application_name (True).name,
+											param.arguments)
 										launch_program := True
 									end
-								else
-										--| Without BP, we just launch the execution as it is
-									(create {COMMAND_EXECUTOR}).execute_with_args (eiffel_system.application_name (True).name,
-										param.arguments)
-									launch_program := True
 								end
 							end
 								--| if launch_program is False this mean we haven't launch the application yet
@@ -325,49 +337,67 @@ feature -- Start Operation
 			system_name: STRING
 			env32: like environment_variables_updated_with
 			launch_it: BOOLEAN
+			l_il_env: IL_ENVIRONMENT
 		do
 			if Eiffel_project.initialized and then Eiffel_project.system_defined then
 				system_name := Eiffel_system.name.twin
 			end
 			if system_name = Void then
 				warning (Warning_messages.w_Must_compile_first)
-			elseif
-				Eiffel_system.system /= Void and then
-				Eiffel_system.system.il_generation and then
-				Eiffel_system.system.msil_generation_type.same_string_general ("dll")
-			then
-				warning (debugger_names.m_no_debugging_for_dll_system)
-			else
-				check
-					System_defined: Eiffel_system.Workbench.system_defined
-				end
-				appl_name := Eiffel_system.application_name (True)
-				create f.make_with_path (appl_name)
-				if not f.exists then
-					warning (Warning_messages.w_Unexisting_system)
+			elseif attached Eiffel_system.system as l_system then
+				if
+					l_system.il_generation and then
+					l_system.msil_generation_type.same_string_general ("dll")
+				then
+					warning (debugger_names.m_no_debugging_for_dll_system)
 				else
-					if Eiffel_system.System.il_generation then
-							-- No need to check the `exe' as it is guaranteed to have been
-							-- generated by the Eiffel compiler.
-						launch_it := True
-					else
-						create make_f.make_with_path (project_location.workbench_path.extended (Makefile_SH))
-						if make_f.exists and then make_f.date > f.date then
-							warning (Warning_messages.w_MakefileSH_more_recent)
-						else
-							launch_it := True
+					check
+						System_defined: Eiffel_system.Workbench.system_defined
+					end
+					appl_name := Eiffel_system.application_name (True)
+					if l_system.il_generation and then l_system.is_il_netcore then
+						if not {PLATFORM}.is_windows then
+							appl_name := appl_name.appended_with_extension ("exe")
 						end
 					end
-					if launch_it then
-						env32 := environment_variables_updated_with (param.environment_variables, False)
-						env32.force (project_location.workbench_path.name, {STRING_32} "MELT_PATH")
-						create cmd_exec
-						cmd_exec.execute_with_args_and_working_directory_and_environment (
-									safe_path (appl_name.name),
-									param.arguments,
+					create f.make_with_path (appl_name)
+					if not f.exists then
+						warning (Warning_messages.w_Unexisting_system)
+					else
+						if Eiffel_system.System.il_generation then
+								-- No need to check the `exe' as it is guaranteed to have been
+								-- generated by the Eiffel compiler.
+							launch_it := True
+						else
+							create make_f.make_with_path (project_location.workbench_path.extended (Makefile_SH))
+							if make_f.exists and then make_f.date > f.date then
+								warning (Warning_messages.w_MakefileSH_more_recent)
+							else
+								launch_it := True
+							end
+						end
+						if launch_it then
+							env32 := environment_variables_updated_with (param.environment_variables, False)
+							create cmd_exec
+							if l_system.il_generation and then l_system.is_il_netcore then
+								create l_il_env.make (l_system.clr_runtime_version)
+
+									-- TODO: for now Eiffel NETCORE has no support for execution
+								cmd_exec.execute_with_args_and_working_directory_and_environment (
+									l_il_env.dotnet_executable_path.name,
+									{STRING_32} "%"" + appl_name.name + {STRING_32} "%" " + param.arguments,
 									param.working_directory,
-									env32
-								)
+									env32)
+							else
+								env32.force (project_location.workbench_path.name, {STRING_32} "MELT_PATH")
+								cmd_exec.execute_with_args_and_working_directory_and_environment (
+											safe_path (appl_name.name),
+											param.arguments,
+											param.working_directory,
+											env32
+										)
+							end
+						end
 					end
 				end
 			end
@@ -382,48 +412,66 @@ feature -- Start Operation
 			system_name: STRING
 			env32: like environment_variables_updated_with
 			launch_it: BOOLEAN
+			l_il_env: IL_ENVIRONMENT
 		do
 			if Eiffel_project.initialized and then Eiffel_project.system_defined then
 				system_name := Eiffel_system.name.twin
 			end
 			if system_name = Void then
 				warning (Warning_messages.w_Must_finalize_first)
-			elseif
-				Eiffel_system.system /= Void and then
-				Eiffel_system.system.il_generation and then
-				Eiffel_system.system.msil_generation_type.same_string_general ("dll")
-			then
-				warning (debugger_names.m_no_debugging_for_dll_system)
-			else
-				check
-					System_defined: Eiffel_system.Workbench.system_defined
-				end
-				appl_name := Eiffel_system.application_name (False)
-				create f.make_with_path (appl_name)
-				if not f.exists then
-					warning (Warning_messages.w_Unexisting_system)
+			elseif attached Eiffel_system.system as l_system then
+				if
+					l_system.il_generation and then
+					l_system.msil_generation_type.same_string_general ("dll")
+				then
+					warning (debugger_names.m_no_debugging_for_dll_system)
 				else
-					if Eiffel_system.System.il_generation then
-							-- No need to check the `exe' as it is guaranteed to have been
-							-- generated by the Eiffel compiler.
-						launch_it := True
-					else
-						create make_f.make_with_path (project_location.final_path.extended (makefile_sh))
-						if make_f.exists and then make_f.date > f.date then
-							warning (Warning_messages.w_MakefileSH_more_recent)
-						else
-							launch_it := True
+					check
+						System_defined: Eiffel_system.Workbench.system_defined
+					end
+					appl_name := Eiffel_system.application_name (False)
+					if l_system.il_generation and then l_system.is_il_netcore then
+						if not {PLATFORM}.is_windows then
+							appl_name := appl_name.appended_with_extension ("exe")
 						end
 					end
-					if launch_it then
-						create cmd_exec
-						env32 := environment_variables_updated_with (param.environment_variables, True)
-						cmd_exec.execute_with_args_and_working_directory_and_environment (
-									safe_path (appl_name.name),
-									param.arguments,
-									param.working_directory,
-									env32
-								)
+					create f.make_with_path (appl_name)
+					if not f.exists then
+						warning (Warning_messages.w_Unexisting_system)
+					else
+						if l_system.il_generation then
+								-- No need to check the `exe' as it is guaranteed to have been
+								-- generated by the Eiffel compiler.
+							launch_it := True
+						else
+							create make_f.make_with_path (project_location.final_path.extended (makefile_sh))
+							if make_f.exists and then make_f.date > f.date then
+								warning (Warning_messages.w_MakefileSH_more_recent)
+							else
+								launch_it := True
+							end
+						end
+						if launch_it then
+							create cmd_exec
+							env32 := environment_variables_updated_with (param.environment_variables, True)
+							if l_system.il_generation and then l_system.is_il_netcore then
+								create l_il_env.make (l_system.clr_runtime_version)
+									-- TODO: for now Eiffel NETCORE has no support for execution
+								cmd_exec.execute_with_args_and_working_directory_and_environment (
+										l_il_env.dotnet_executable_path.name,
+										{STRING_32} "%"" + appl_name.name + {STRING_32} "%" " + param.arguments,
+										param.working_directory,
+										env32
+									)
+							else
+								cmd_exec.execute_with_args_and_working_directory_and_environment (
+											safe_path (appl_name.name),
+											param.arguments,
+											param.working_directory,
+											env32
+										)
+							end
+						end
 					end
 				end
 			end

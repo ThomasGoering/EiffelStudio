@@ -21,10 +21,13 @@ iff not defined NO_COMPILE then
 		specific_make %2
 	endiff
 
+	remtrace C_library zlib
 	cd %1\C_library\zlib
 	specific_make %2
+	remtrace C_library libpng
 	cd %1\C_library\libpng
 	specific_make %2
+	remtrace C_library curl
 	cd %1\C_library\curl
 	espawn "geant compile"
 endiff

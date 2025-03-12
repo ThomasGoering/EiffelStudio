@@ -24,9 +24,14 @@ inherit
 			is_equal
 		end
 
+	MD_VISITABLE
+		redefine
+			is_equal
+		end
+
+
 create
-	make_with_index,
-	make_with_tag_and_index
+	make_with_index
 
 feature {NONE} -- Initialization
 
@@ -35,22 +40,30 @@ feature {NONE} -- Initialization
 			index := a_index
 		ensure
 			index_set: index = a_index
-			tag_zero: tag = 0
 		end
 
-	make_with_tag_and_index (a_tag: INTEGER; a_index: NATURAL_32)
+feature -- Operations
+
+	update_index (idx: like index)
+		require
+			valid_index: idx >= 0
 		do
-			make_with_index (a_index)
-			tag := a_tag
-		ensure
-			tag_set: tag = a_tag
-			index_set: index = a_index
+			debug ("il_emitter_table")
+				print (Generator + ".update_index: 0x" + index.to_hex_string + " => 0x"+ idx.to_hex_string + "%N")
+			end
+			index := idx
+		end
+
+
+feature -- Status report
+
+	is_coded_index: BOOLEAN
+		do
+			Result := False
 		end
 
 feature -- Access
 
-	tag: INTEGER
-			-- Indicate which table the index belongs to.
 
 	index: NATURAL_32
 			-- The index used in tables and blobs.
@@ -58,20 +71,20 @@ feature -- Access
 	token: NATURAL_32
 			-- Associated token for information.
 		do
-			Result := (tag.to_natural_32 |<< 24) | index
+			Result := index
 		end
 
 	binary_value: NATURAL_32
 			-- Value expected to be written in the binary.
 		do
-			Result := (index |<< get_index_shift) + tag.to_natural_32
+			Result := index
 		end
 
 feature -- Status report
 
 	debug_output: STRING
 		do
-			Result := "#" + index.out + "<"+ tag.out +">"
+			Result := "0x" + token.to_hex_string
 		end
 
 	is_ready_for_render: BOOLEAN
@@ -84,7 +97,7 @@ feature -- Comparison
 	is_equal (other: like Current): BOOLEAN
 			-- Is `other' equal to the current object?
 		do
-			Result := index = other.index and then tag = other.tag
+			Result := index = other.index
 		end
 
 	same_as_index (other: PE_INDEX_BASE): BOOLEAN
@@ -108,8 +121,7 @@ feature -- Operations
 			v: NATURAL_32
 		do
 				--  Calculate the value to be written to the destination `a_dest`.
-			v := (index |<< get_index_shift) + tag.to_natural_32
-
+			v := index
 			if has_index_overflow (a_sizes) then
 					-- write the value as NATURAL_32 to the destination `a_dest`
 				{BYTE_ARRAY_HELPER}.put_array_natural_32 (a_dest, v, a_pos.to_integer_32)
@@ -142,17 +154,7 @@ feature -- Operations
 				Result := 2
 			end
 				-- Compute the index and tag values
-			index := v |>> get_index_shift
-			tag := (v & (({INTEGER} 1 |<< get_index_shift - 1)).to_natural_32).to_integer_32
-		end
-
-	get_index_shift: INTEGER
-		do
-				-- to be redefined
-				--| Declared in C++ as virtual int GetIndexShift() const = 0;
-				--| it's a pure virtual function. So the function doesn't change
-				--| the data of the class.
-				--| In Eiffel we could declared it as deferred.
+			index := v
 		end
 
 	has_index_overflow (a_sizes: ARRAY [NATURAL_32]): BOOLEAN
@@ -166,7 +168,14 @@ feature -- Operations
 
 	large (a_x: NATURAL_32): BOOLEAN
 		do
-			Result := (a_x |<< get_index_shift) > 0xffff
+			Result := a_x > 0xffff
+		end
+
+feature -- Visitor
+
+	accepts (vis: MD_VISITOR)
+		do
+			vis.visit_index (Current)
 		end
 
 end

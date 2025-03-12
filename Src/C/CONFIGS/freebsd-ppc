@@ -167,7 +167,7 @@ fi
 if [ -n "$CFLAGS" ]; then
 	ccflags=$CFLAGS
 else
-# Ideally it should use `-mlongcall' but later version of gcc crashes when used. When it is 
+# Ideally it should use `-mlongcall' but later version of gcc crashes when used. When it is
 # working again, we should try to see if one can link a large application like EiffelStudio
 #	ccflags='-pipe -fPIC -mlongcall'
 	ccflags='-pipe -fPIC -D_GNU_SOURCE'
@@ -215,7 +215,7 @@ eiflib='finalized'
 if [ -n "$LD" ]; then
         ld=$LD
 else
-        ld='ld'
+        ld=$cc
 fi
 lintflags=''
 ldflags="-L/usr/lib"
@@ -236,15 +236,19 @@ mt_prefix='mt'
 mv='/bin/mv'
 prefix='lib'
 ranlib=':'
+obj_file_ext='o'
 shared_prefix='lib'
 shared_suffix='.so'
 shared_rt_suffix='.so'
 sharedlibs='-lm -lcompat'
 mtsharedlibs='-lm -lcompat -lpthread'
-sharedlibversion='.23.06'
-sharedlink='ld'
+sharedlibversion='.24.02'
+sharedlink=$ld
 suffix='.a'
 wkeiflib='wkbench'
+
+#IL generation
+il_flags='-DEIF_IL_DLL'
 
 #testing
 start_test='if [ ! -f finished ] ; then'

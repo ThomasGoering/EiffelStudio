@@ -59,6 +59,19 @@ namespace md_consumer
                             return e.Value;
                         }
                     }
+                        // WARNING: Workaround using System.Runtime instead of System.Private.CoreLib, when this private assembly is not loaded
+						// by consumed assemblies (but loaded by nemdc process itself).
+
+						// If assembly name not found, and if it is a System.Private.* library
+                        // try using System.Runtime assembly instead.
+                    if (tn.StartsWith("System.Private.")) {
+                        tn = "System.Runtime,";
+                        foreach(KeyValuePair<string, int> e in assembly_mapping_table) {
+                            if (e.Key.StartsWith(tn)) {
+                                return e.Value;
+                            }
+                        }
+                    }                    
                 }
             }
             return -1;
@@ -111,11 +124,12 @@ namespace md_consumer
                     Debug.Assert(false, "from doc");
                 }
             } else {
+
                 Assembly l_assembly = t.Assembly;
                 string? l_full_name = l_assembly.FullName;
-                string? l_name = t.FullName;
+                string? l_type_name = t.FullName;
 
-                if (l_full_name != null && l_name != null) {
+                if (l_full_name != null && l_type_name != null) {
                     int id = -1;
                     if (is_assembly_mapped (l_full_name)) {
                         id = assembly_index(l_full_name);
@@ -128,18 +142,40 @@ namespace md_consumer
                         if (t.IsArray) {
                             Type? l_type = t.GetElementType();
                             if (l_type != null) {
-                                return new CONSUMED_ARRAY_TYPE(l_name, id, referenced_type_from_type (l_type));
+                                res = new CONSUMED_ARRAY_TYPE(l_type_name, id, referenced_type_from_type (l_type));
                             } else {
                                 Debug.Assert(false, "from doc");
                             }
                         } else {
-                            return new CONSUMED_REFERENCED_TYPE(l_name, id);
+                            res = new CONSUMED_REFERENCED_TYPE(l_type_name, id);
                         }
                     } else {
                         Debug.Assert(false, "found");
                     }
                 } else {
                     // Debug.Assert(false, "from doc");
+                    // Should has a FullName and a Nname
+                }
+
+                if (
+                    t.IsGenericParameter 
+                    // && t.ContainsGenericParameters 
+                    && md_consumer.Config.generic_method_enabled
+                    )
+                {
+                    //TODO: implement proper generic support !
+                    Type? l_new_type= null;
+                    l_new_type = typeof(System.Object);
+                    if (t.BaseType != null && t.BaseType.FullName != null && t.BaseType.FullName.Equals("System.Array")) {
+                        l_new_type = typeof(System.Object[]);
+                    }
+                    if (l_new_type != null) { 
+                        CONSUMED_REFERENCED_TYPE? new_res = referenced_type_from_type (l_new_type);
+                        res = new CONSUMED_FORMAL_GENERIC_TYPE(new_res, t.ToString(), t.GenericParameterPosition);
+                        STATUS_PRINTER.debug(string.Format("Replaced formal generic type '{0}' by '{1}' ...", t.ToString(), l_new_type.ToString()));
+                    } else {
+                        Debug.Assert(false, "from doc");
+                    }                
                 }
             }
             if (res == null) {

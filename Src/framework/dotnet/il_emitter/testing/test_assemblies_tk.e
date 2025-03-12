@@ -7,6 +7,9 @@ note
 class
 	TEST_ASSEMBLIES_TK
 
+inherit
+	TEST_I
+
 feature -- Test
 
 	test_assemblies
@@ -22,10 +25,11 @@ feature -- app_module
 			-- Define an APP
 			--	With references to Module1 and Module2
 			--	Class Program with Method Main.
+			--  The example is similar to the C# example
+			--  cs/multi_assemblies
 
 		local
 			l_pe_file: CLI_PE_FILE
-			md_dispenser: MD_DISPENSER
 			md_emit: MD_EMIT
 			md_assembly_info: MD_ASSEMBLY_INFO
 			l_pub_key_token: MD_PUBLIC_KEY_TOKEN
@@ -63,15 +67,15 @@ feature -- app_module
 			class_b_method_j_token: INTEGER
 			class_b_object_ctor: INTEGER
 			assembly2_token: INTEGER
+			s: STRING
 		do
-			create md_dispenser.make
-			md_emit := md_dispenser.emit
+			md_emit := new_emitter
 
 			create md_assembly_info.make
 			md_assembly_info.set_major_version (1)
 			md_assembly_info.set_minor_version (0)
 
-			my_assembly := md_emit.define_assembly (create {CLI_STRING}.make ("app.exe"), 0, md_assembly_info, Void)
+			my_assembly := md_emit.define_assembly (create {CLI_STRING}.make ("app"), 0, md_assembly_info, Void)
 
 			md_assembly_info.set_major_version (6)
 			md_assembly_info.set_minor_version (0)
@@ -90,7 +94,7 @@ feature -- app_module
 			md_assembly_info.set_major_version (1)
 			md_assembly_info.set_minor_version (0)
 
-			assembly2_token := md_emit.define_assembly_ref (create {CLI_STRING}.make ("assembly2.dll"), md_assembly_info, Void)
+			assembly2_token := md_emit.define_assembly_ref (create {CLI_STRING}.make ("assembly2"), md_assembly_info, Void)
 
 			object_type_token := md_emit.define_type_ref (
 					create {CLI_STRING}.make ("System.Object"), system_runtime_token)
@@ -392,6 +396,58 @@ feature -- app_module
 			l_pe_file.set_method_writer (method_writer)
 			l_pe_file.set_entry_point_token (my_main)
 			l_pe_file.save
+
+			save_to_file ("app.runtimeconfig.json", "[
+{
+  "runtimeOptions": {
+    "tfm": "net6.0",
+    "framework": {
+      "name": "Microsoft.NETCore.App",
+      "version": "6.0.0"
+    }
+  }
+}
+			]")
+
+			save_to_file ("app.deps.json", "[
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v6.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v6.0": {
+        "app/1.0.0.0": {
+            "runtime": {
+                "app.exe": {}
+            },
+            "dependencies": {
+              "assembly2": "1.0.0.0"
+           }
+        },
+      "assembly2/1.0.0.0": {
+        "runtime": {
+          "assembly2.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "app/1.0.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "assembly2/1.0.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
+			]")
+
 		end
 
 feature -- Modules
@@ -400,7 +456,6 @@ feature -- Modules
 			-- Define a Assembly2 with a Class B and method J
 		local
 			l_pe_file: CLI_PE_FILE
-			md_dispenser: MD_DISPENSER
 			md_emit: MD_EMIT
 			md_assembly_info: MD_ASSEMBLY_INFO
 			l_pub_key_token: MD_PUBLIC_KEY_TOKEN
@@ -423,14 +478,13 @@ feature -- Modules
 			string_token: INTEGER
 			my_assembly_2: INTEGER
 		do
-			create md_dispenser.make
-			md_emit := md_dispenser.emit
+			md_emit := new_emitter
 
 			create md_assembly_info.make
 			md_assembly_info.set_major_version (1) -- set_minor_version
 			md_assembly_info.set_minor_version (0)
 
-			my_assembly_2 := md_emit.define_assembly (create {CLI_STRING}.make ("assembly2.dll"), 0, md_assembly_info, Void)
+			my_assembly_2 := md_emit.define_assembly (create {CLI_STRING}.make ("assembly2"), 0, md_assembly_info, Void)
 
 			md_assembly_info.set_major_version (6)
 			md_assembly_info.set_minor_version (0)
@@ -512,6 +566,20 @@ feature -- Modules
 			create ca.make
 			ca.put_string (".NETCoreApp,Version=v6.0")
 
+
+				--| The FrameworkDisplayName info is optional, it could be unset, set to "", or set to meaningful title such as "NET 6.0"
+				-- Number of named arguments
+			ca.put_integer_16 (1)
+				-- We mark it's a property
+			ca.put_integer_8 ({MD_SIGNATURE_CONSTANTS}.element_type_property)
+				-- Fill `FieldOrPropType' in `ca'
+			ca.put_integer_8 ({MD_SIGNATURE_CONSTANTS}.element_type_string)
+				-- Put the name of the property
+			ca.put_string ("FrameworkDisplayName")
+				-- Put the value
+			ca.put_string ("")
+			ca_token := md_emit.define_custom_attribute (my_assembly_2, attribute_ctor, ca)
+
 				--
 				-- Object.ctor
 				--
@@ -545,9 +613,11 @@ feature -- Modules
 
 			j_method := md_emit.define_method (create {CLI_STRING}.make ("J"),
 					l_class_b_token,
-					{MD_METHOD_ATTRIBUTES}.public |
-					{MD_METHOD_ATTRIBUTES}.hide_by_signature |
-					{MD_METHOD_ATTRIBUTES}.new_slot,
+					{MD_METHOD_ATTRIBUTES}.public
+					| {MD_METHOD_ATTRIBUTES}.hide_by_signature
+--					| {MD_METHOD_ATTRIBUTES}.new_slot
+--					| {MD_METHOD_ATTRIBUTES}.final
+					,
 					sig, {MD_METHOD_ATTRIBUTES}.Managed)
 
 			body := method_writer.new_method_body (j_method)
@@ -595,6 +665,24 @@ feature -- Modules
 		end
 
 feature -- Helper
+
+	save_to_file (fn: READABLE_STRING_GENERAL; s: STRING)
+		local
+			f: PLAIN_TEXT_FILE
+			retried: BOOLEAN
+		do
+			if not retried then
+				create f.make_with_name (fn)
+				if not f.exists or else f.is_access_writable then
+					f.open_write
+					f.put_string (s)
+					f.close
+				end
+			end
+		rescue
+			retried := True
+			retry
+		end
 
 	define_assembly_ref (md_emit: MD_EMIT; name: STRING; assembly_info: MD_ASSEMBLY_INFO; pub_key_token: MD_PUBLIC_KEY_TOKEN): INTEGER
 		do

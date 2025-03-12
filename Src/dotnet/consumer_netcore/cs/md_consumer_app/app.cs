@@ -34,6 +34,7 @@ namespace EifMdConsumer
             bool has_halt = false;
             bool nologo = false;
             bool is_debug = false;
+            int debug_level = 0;
             bool is_cleaning = false;
             bool build_html = false;
             bool is_silent = false;
@@ -74,8 +75,11 @@ namespace EifMdConsumer
                     build_html = true;
                 } else if (a.Equals("-debug")) {
                     is_debug = true;     
+                    debug_level = debug_level + 1;
                 } else if (a.Equals("-silent")) {
                     is_silent = true;                
+                } else if (a.Equals("-v")) {
+                    is_silent = false;                
                 } else if (a.Equals("-nologo")) {
                     nologo = true;
                 } else if (a.Equals("--help") || a.Equals("-?")) {
@@ -85,8 +89,15 @@ namespace EifMdConsumer
                     Console.WriteLine("Ignore parameter: " + args[i]);
                 }
             }
+
+            md_consumer.STATUS_PRINTER.setup (true);
+
+			md_consumer.STATUS_PRINTER.set_error (true);
             if (is_silent) {
                 nologo = true;
+			} else {
+	            md_consumer.STATUS_PRINTER.set_info (true);
+	            // md_consumer.STATUS_PRINTER.set_warning (true);
             }
 
             if (is_help) {
@@ -112,10 +123,16 @@ namespace EifMdConsumer
                     md_consumer.ASSEMBLY_LOADER loader = md_consumer.SHARED_ASSEMBLY_LOADER.assembly_loader;
                     if (is_debug) {
                         loader.set_is_debug (true);
+                        md_consumer.STATUS_PRINTER.set_info (true);
+                        md_consumer.STATUS_PRINTER.set_warning (true);
+                        if (debug_level > 1) {
+                            md_consumer.STATUS_PRINTER.set_debug (true, debug_level - 1);
+                        }
                     }
                     loader.register_locations(ref_assemblies);
                     loader.register_sdk_locations(sdk_locations);
                     loader.register_runtime_locations(runtime_locations);
+                    loader.register_locations(add_assemblies);
                     
                     StringBuilder o = new StringBuilder();
                     if (cache_location != null) {

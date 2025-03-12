@@ -584,6 +584,28 @@ feature -- Element change license
 			es_cloud_storage.save_license (a_license)
 		end
 
+	convert_to_fallback (a_license: ES_CLOUD_LICENSE; a_version: READABLE_STRING_GENERAL)
+		require
+			existing_license: license (a_license.id) /= Void
+			a_license.may_be_eligible_to_fallback
+		do
+			a_license.set_version (a_version)
+			a_license.set_fallback_date (create {DATE_TIME}.make_now_utc)
+			es_cloud_storage.save_license (a_license)
+		ensure
+			a_license.is_fallback
+		end
+
+	undo_convert_to_fallback (a_license: ES_CLOUD_LICENSE)
+		require
+			existing_license: license (a_license.id) /= Void
+			a_license.is_fallback
+		do
+--			a_license.set_version (Void) -- should we ??
+			a_license.set_fallback_date (Void)
+			es_cloud_storage.save_license (a_license)
+		end
+
 	remove_expiration_date (a_license: ES_CLOUD_LICENSE)
 		require
 			existing_license: license (a_license.id) /= Void
@@ -664,7 +686,11 @@ feature -- Emailing
 				a_licenses as ic
 			loop
 				lic := ic.item
-				if lic.is_expired and not lic.is_suspended then
+				if
+					not lic.is_active and then
+					lic.is_expired and not
+					lic.is_suspended
+				then
 					if attached user_for_license (lic) as u then
 						create l_user_lic.make (u, lic)
 						send_message_to_expired_user_license (l_user_lic, Void)
@@ -1085,6 +1111,12 @@ feature -- Access: subscriptions
 			es_cloud_storage.discard_installation (inst, a_user)
 		end
 
+	update_installation_license (inst: ES_CLOUD_INSTALLATION; a_lic: ES_CLOUD_LICENSE)
+		do
+			es_cloud_storage.update_installation_license (inst, a_lic)
+			inst.update_license (a_lic)
+		end
+
 	all_user_installations: LIST [ES_CLOUD_INSTALLATION]
 		do
 			Result := es_cloud_storage.all_user_installations
@@ -1138,6 +1170,59 @@ feature -- Access: subscriptions
 	license_installations (a_license: ES_CLOUD_LICENSE): LIST [ES_CLOUD_INSTALLATION]
 		do
 			Result := es_cloud_storage.license_installations (a_license.id)
+		end
+
+	other_adapted_licenses (a_user: ES_CLOUD_USER; a_inst: ES_CLOUD_INSTALLATION): detachable ARRAYED_LIST [ES_CLOUD_LICENSE]
+			-- Other adapted licenses for a installation and a user.
+		local
+			lic: ES_CLOUD_LICENSE
+			l_has_valid_license: BOOLEAN
+			l_inst_limit: NATURAL
+			pl,ve: READABLE_STRING_GENERAL
+			l_licenses: LIST [ES_CLOUD_USER_LICENSE]
+		do
+			pl := a_inst.platform
+			ve := a_inst.product_version
+				-- REQUIRE: user, platform, version !
+			l_licenses := user_licenses (a_user)
+			if l_licenses = Void or else l_licenses.is_empty then
+				if attached user_subscription (a_user) as l_sub then
+					lic := converted_license_from_user_subscription (l_sub, a_inst)
+					l_licenses := user_licenses (a_user)
+				end
+			end
+			if l_licenses /= Void and then not l_licenses.is_empty then
+				create Result.make (l_licenses.count)
+				across
+					l_licenses as ic
+				loop
+					lic := ic.item.license
+					if
+						lic.is_valid (pl, ve) and then
+						lic.id /= a_inst.license_id -- Exclude current installation license
+					then
+						l_has_valid_license := True
+
+						l_inst_limit := lic.installations_limit
+						if
+							l_inst_limit = 0
+							or else (
+								attached license_installations (lic) as lst and then
+								lst.count.to_natural_32 < l_inst_limit
+							)
+						then
+							Result.force (lic)
+						else
+								-- Reached installation limit for this license!
+							lic := Void
+						end
+					end
+				end
+				lic := Void
+				if Result.is_empty then
+					Result := Void
+				end
+			end
 		end
 
 	user_installations_sorter: SORTER [ES_CLOUD_INSTALLATION]
@@ -1390,21 +1475,25 @@ feature -- HTML factory
 			s.append (html_encoded (l_plan.title_or_name))
 			s.append ("%"</span> ")
 			s.append ("<span class=%"details%">")
-			if lic.is_active then
+			if lic.is_suspended then
+				s.append ("<span class=%"status warning%">Suspended</span>")
+			elseif lic.is_fallback then
+				s.append ("<span class=%"status fallback%">Fallback license</span>")
+			elseif lic.is_active then
 				if attached lic.expiration_date as exp then
 					s.append ("<span class=%"expiration%">")
 					s.append (lic.days_remaining.out)
 					s.append (" days remaining")
 					s.append ("</span>")
 				else
-					s.append ("<span class=%"status%">Active</span>")
+					s.append ("<span class=%"status success%">Active</span>")
 				end
-			elseif lic.is_fallback then
-				s.append ("<span class=%"status%">Fallback license</span>")
 			else
+				check lic.is_expired end
 				s.append ("<span class=%"status warning%">Expired</span>")
 			end
-			s.append ("</div>")
+			s.append ("</span>")
+			s.append ("</div>%N")
 		end
 
 	append_short_license_view_to_html (lic: ES_CLOUD_LICENSE; u: ES_CLOUD_USER; es_cloud_module: ES_CLOUD_MODULE; s: STRING_8)
@@ -1420,16 +1509,19 @@ feature -- HTML factory
 			s.append (html_encoded (l_plan.title_or_name))
 			s.append ("</div>")
 			s.append ("<div class=%"details%">")
-			if lic.is_active then
+			if lic.is_suspended then
+				s.append ("<span class=%"status warning%">Suspended</span>")
+			elseif lic.is_fallback then
+				s.append ("Fallback license")
+			elseif lic.is_active then
 				if attached lic.expiration_date as exp then
 					s.append (lic.days_remaining.out)
 					s.append (" days remaining")
 				else
 					s.append ("Active")
 				end
-			elseif lic.is_fallback then
-				s.append ("Fallback license")
 			else
+				check lic.is_expired end
 				s.append ("<span class=%"status warning%">Expired</span>")
 			end
 			s.append ("</div>")
@@ -1441,7 +1533,7 @@ feature -- HTML factory
 			s.append ("</span></div>")
 			if
 				lic.plan.same_plan (trial_plan) and then
-				lic.is_expired and then
+				not lic.is_active and then
 				is_eligible_to_trial_extension (lic)
 			then
 				s.append ("<div class=%"action%">")
@@ -1497,7 +1589,16 @@ feature -- HTML factory
 			s.append ("<li class=%"creation%"><span class=%"title%">Started</span> ")
 			s.append (api.date_time_to_string (lic.creation_date))
 			s.append ("</li>")
-			if lic.is_active then
+			if lic.is_suspended then
+				s.append ("<li class=%"status warning%">SUSPENDED</li>")
+			elseif lic.is_fallback then
+				s.append ("<li class=%"status notice%">Fallback license</li>")
+				if attached lic.fallback_date as dt then
+					s.append ("<li class=%"fallback%"><span class=%"title%">Started date</span> ")
+					s.append (api.date_time_to_string (dt))
+					s.append ("</li>")
+				end
+			elseif lic.is_active then
 				if attached lic.expiration_date as exp then
 					s.append ("<li class=%"expiration%"><span class=%"title%">Renewal date</span> ")
 					s.append (api.date_time_to_string (exp))
@@ -1508,16 +1609,13 @@ feature -- HTML factory
 				else
 					s.append ("<li class=%"status success%">ACTIVE</li>")
 				end
-			elseif lic.is_fallback then
-				s.append ("<li class=%"status notice%">Fallback license</li>")
-			elseif lic.is_suspended then
-				s.append ("<li class=%"status warning%">SUSPENDED</li>")
 			else
+				check lic.is_expired end
 				s.append ("<li class=%"status warning%">EXPIRED</li>")
 				if
 					es_cloud_module /= Void and then
 					lic.plan.same_plan (trial_plan) and then
-					lic.is_expired and then
+					not lic.is_active and then
 					is_eligible_to_trial_extension (lic)
 				then
 					s.append ("<li class=%"action%">")
@@ -1551,8 +1649,13 @@ feature -- HTML factory
 					else
 						s.append ("<li class=%"es-installation discardable%">")
 					end
-					s.append (html_encoded (inst.id))
-					s.append ("</li>%N")
+					if a_user /= Void and then es_cloud_module /= Void then
+						s.append ("<a href=%"" + api.location_url (es_cloud_module.installation_location (inst), Void) + "%">")
+						s.append (html_encoded (inst.id))
+						s.append ("</a></li>%N")
+					else
+						s.append (html_encoded (inst.id))
+					end
 				end
 				s.append ("</ul></div>")
 				s.append ("</li>")

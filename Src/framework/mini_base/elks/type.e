@@ -54,6 +54,12 @@ feature -- Access
 			name_not_void: Result /= Void
 		end
 
+	name_32: STRING_32
+			-- Fake function for the purpose of mini_base
+		do
+			Result := name.as_string_32
+		end
+
 	generic_parameter_type (i: INTEGER): TYPE [detachable ANY]
 			-- `i'-th generic parameter of Eiffel type represented by `Current'
 		require
@@ -139,7 +145,7 @@ feature -- Comparison
 
 feature -- Conversion
 
-	adapted alias "[]" (g: G): G
+	adapt alias "[]" (g: detachable G): detachable G
 			-- Adapts `g' or calls necessary conversion routine to adapt `g'
 		do
 			Result := g
@@ -211,7 +217,7 @@ feature {NONE} -- Implementation
 		end
 
 note
-	copyright: "Copyright (c) 1984-2015, Eiffel Software and others"
+	copyright: "Copyright (c) 1984-2023, Eiffel Software and others"
 	license:   "Eiffel Forum License v2 (see http://www.eiffel.com/licensing/forum.txt)"
 	source: "[
 			Eiffel Software

@@ -9,6 +9,8 @@ class
 inherit
 	ITERABLE [PE_TABLE_ENTRY_BASE]
 
+	MD_VISITABLE
+
 	DEBUG_OUTPUT
 
 create
@@ -16,7 +18,7 @@ create
 
 feature {NONE} -- Initialization
 
-	make (a_id: INTEGER)
+	make (a_id: NATURAL_32)
 		do
 			table_id := a_id
 			create {ARRAYED_LIST [PE_TABLE_ENTRY_BASE]} items.make (0)
@@ -24,13 +26,21 @@ feature {NONE} -- Initialization
 
 feature -- Access
 
-	table_id: INTEGER
+	table_id: NATURAL_32
 
-feature {NONE} -- Access	
+feature {MD_TABLE_ACCESS} -- Access	
 
 	items: LIST [PE_TABLE_ENTRY_BASE]
 			-- vector of tables that can appear in a PE file
 			-- empty tables are elided / pass over?
+
+feature {MD_TABLE_ACCESS} -- Access	
+
+	replace_items (lst: LIST [PE_TABLE_ENTRY_BASE])
+			-- Replace `items` with `lst`.
+		do
+			items := lst
+		end
 
 feature -- Access
 
@@ -82,10 +92,16 @@ feature -- Status Report
 			Result := "["+ table_id.out +"] size=" + size.out
 		end
 
+	count: INTEGER
+			-- Table count
+		do
+			Result := items.count
+		end
+
 	size: NATURAL_32
 			-- Table size
 		do
-			Result := items.count.to_natural_32
+			Result := count.to_natural_32
 		end
 
 	next_index: NATURAL_32
@@ -97,6 +113,18 @@ feature -- Status Report
 			-- Is the table empty?
 		do
 			Result := items.is_empty
+		end
+
+	valid_index (idx: NATURAL_32): BOOLEAN
+		do
+			Result := idx >= 0 and idx <= size + 1
+		end
+
+feature -- Visitor
+
+	accepts (vis: MD_VISITOR)
+		do
+			vis.visit_table (Current)
 		end
 
 end

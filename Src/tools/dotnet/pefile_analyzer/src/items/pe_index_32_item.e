@@ -27,11 +27,14 @@ feature {NONE} -- Initialization
 		do
 			make_item (a_start_index, a_start_index, a_start_index + 4, mp, lab) --{PLATFORM}.natural_32_bytes)
 			value := mp.read_natural_32_le (0)
+			original_value := value
 		end
 
 feature -- Access
 
 	value: NATURAL_32
+
+	binary_byte_size: NATURAL_32 = 4
 
 feature -- Status report
 
@@ -43,7 +46,7 @@ feature -- Status report
 			else
 				Result := "0x" + value.to_hex_string
 			end
-			if original_value > 0 then
+			if original_value /= value then
 				Result := "0x" + original_value.to_hex_string + "->" + Result
 			end
 		end
@@ -53,6 +56,11 @@ feature -- Access
 	index: NATURAL_32
 		do
 			Result := value
+		end
+
+	original_index: NATURAL_32
+		do
+			Result := original_value
 		end
 
 	sorting_index: NATURAL_32

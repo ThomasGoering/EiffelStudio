@@ -601,7 +601,7 @@ feature {NONE} -- Implementation
 			project_location.set_target (target_name)
 
 				 -- Set ISE_PRECOMP.
-			eiffel_layout.set_precompile (target.setting_msil_generation)
+			eiffel_layout.set_precompile (target.setting_msil_generation, target.setting_msil_clr_version)
 		ensure
 			target_name_set: target_name /= Void and then not target_name.is_empty
 			valid_target: conf_system.targets.has (target_name)
@@ -953,6 +953,7 @@ feature {NONE} -- Implementation
 			system_valid: system /= Void
 		local
 			l_s: like {CONF_TARGET}.settings.item
+			l_sys_clr_rt_version: like {SYSTEM_OPTIONS}.clr_runtime_version
 			l_p: PATH
 			l_b: BOOLEAN
 			vd15: VD15
@@ -1204,7 +1205,7 @@ feature {NONE} -- Implementation
 
 			l_s := l_settings.item (s_external_runtime)
 			if l_s /= Void then
-				system.set_external_runtime (l_s.as_string_8_conversion)
+				system.set_external_runtime ({UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (l_s))
 			end
 
 			l_s := l_settings.item (s_executable_name)
@@ -1218,7 +1219,7 @@ feature {NONE} -- Implementation
 				l_s := Void
 			end
 			if l_s /= Void and then (system.name = Void or else not system.name.same_string_general (l_s)) then
-				system.set_name (l_s.as_string_8_conversion)
+				system.set_name ({UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (l_s))
 				system.request_freeze
 			end
 
@@ -1371,24 +1372,34 @@ feature {NONE} -- Implementation
 
 			l_s := l_settings.item (s_msil_clr_version)
 			if system.il_generation then
-					-- value can't change from a precompile or in a compiled system
+				l_sys_clr_rt_version := system.clr_runtime_version
 				if
 					l_s /= Void and then
-					not equal (system.clr_runtime_version, l_s) and then
-					(a_target.precompile /= Void or workbench.has_compilation_started)
+					(l_sys_clr_rt_version = Void or else not l_s.same_string (l_sys_clr_rt_version))
 				then
-						-- Due to hack to support .net version major.minor without specifing the exact version
+						-- value can't change from a precompile or in a compiled system			
 					if
-						attached system.clr_runtime_version as l_sys_clr_rt_version and then
-						l_sys_clr_rt_version.starts_with (l_s)
+						(workbench.has_compilation_started
+								-- Note: to select adapted precompilation path, and thus precompile
+								--		 the system needs to set the CLR version.
+	--						or a_target.precompile
+						)
 					then
-							-- This is not really a new clr runtime version value
-					elseif not is_force_new_target then
-						create vd83.make (s_msil_clr_version, system.clr_runtime_version, l_s)
-						Error_handler.insert_warning (vd83, a_target.options.is_warning_as_error)
+							-- Due to hack to support .net version major.minor without specifing the exact version
+						if
+							l_sys_clr_rt_version /= Void and then
+							l_sys_clr_rt_version.starts_with (l_s)
+						then
+								-- This is not really a new clr runtime version value
+						elseif not is_force_new_target then
+							create vd83.make (s_msil_clr_version, l_sys_clr_rt_version, l_s)
+							Error_handler.insert_warning (vd83, a_target.options.is_warning_as_error)
+						end
+					else
+						set_clr_runtime_version (l_s)
 					end
-				elseif a_target.precompile = Void and not workbench.has_compilation_started then
-					set_clr_runtime_version (l_s)
+				elseif l_sys_clr_rt_version = Void then
+					set_clr_runtime_version (Void)
 				end
 			end
 
@@ -1433,7 +1444,18 @@ feature {NONE} -- Implementation
 				)
 			then
 					-- Update concurrency setting on first compilation.
-				system.set_concurrency_index (a_target.options.concurrency_capability.root_index)
+				if
+					system.il_generation and then
+					a_target.options.concurrency_capability.root_index = {CONF_TARGET_OPTION}.concurrency_index_scoop
+				then
+						-- FIXME/TODO: remove that condition when SCOOP is supported on Eiffel for .NET [2023-11-24]
+					system.set_concurrency_index ({CONF_TARGET_OPTION}.concurrency_index_thread)
+
+					Error_handler.insert_warning (create {VD90}, False)
+				else
+					system.set_concurrency_index (a_target.options.concurrency_capability.root_index)
+				end
+
 					-- Update void_safety setting on first compilation.
 				system.set_void_safety_index (a_target.options.void_safety_capability.root_index)
 			elseif
@@ -1674,8 +1696,7 @@ feature {NONE} -- Implementation
 			if l_system_name.is_valid_as_string_8 then
 				system.set_name (l_system_name.to_string_8)
 			else
-					-- FIXME: invalid system name!
-				system.set_name (l_system_name.as_string_8_conversion)
+				system.set_name ({UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (l_system_name))
 			end
 		ensure
 			valid_system: workbench.system /= Void
@@ -1686,23 +1707,23 @@ feature {NONE} -- Implementation
 		local
 			l_il_env: IL_ENVIRONMENT_I
 			vd15: VD15
+			v: READABLE_STRING_GENERAL
 		do
 			create {IL_ENVIRONMENT} l_il_env
-
-			if a_version = Void then
-				system.set_clr_runtime_version (l_il_env.default_version)
+			v := a_version
+			if v = Void then
+				v := l_il_env.version -- version = default_version
+			end
+			if attached l_il_env.installed_runtime_info (v) as inf then
+				system.set_clr_runtime_version (inf.full_version)
 			else
-				if attached l_il_env.installed_version (a_version) as v then
-					system.set_clr_runtime_version (v)
-				else
-					create vd15
-					vd15.set_option_name ("msil_clr_version")
-					vd15.set_option_value (a_version)
-					Error_handler.insert_error (vd15)
-					Error_handler.raise_error
+				create vd15
+				vd15.set_option_name ("msil_clr_version")
+				vd15.set_option_value (v)
+				Error_handler.insert_error (vd15)
+				Error_handler.raise_error
 
-					system.set_clr_runtime_version (a_version)
-				end
+				system.set_clr_runtime_version (v)
 			end
 
 			create {IL_ENVIRONMENT} l_il_env.make (system.clr_runtime_version)

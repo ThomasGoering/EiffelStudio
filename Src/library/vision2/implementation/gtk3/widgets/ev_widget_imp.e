@@ -144,10 +144,10 @@ feature {EV_WINDOW_IMP, EV_INTERMEDIARY_ROUTINES, EV_ANY_I, EV_APPLICATION_IMP} 
 				-- TODO: potential optimization connect only unmap , once the widget was mapped once
 			real_signal_connect_after (a_c_object,
 					{EV_GTK_EVENT_STRINGS}.map_event_name,
-					agent (l_app_imp.gtk_marshal).on_widget_mapped_signal_intermediary (a_c_object))
+					agent (l_app_imp.gtk_marshal).on_widget_mapped_signal_intermediary (a_c_object, ?))
 			real_signal_connect_after (a_c_object,
 					{EV_GTK_EVENT_STRINGS}.unmap_event_name,
-					agent (l_app_imp.gtk_marshal).on_widget_unmapped_signal_intermediary (a_c_object))
+					agent (l_app_imp.gtk_marshal).on_widget_unmapped_signal_intermediary (a_c_object, ?))
 			real_signal_connect_after (a_c_object,
 					{EV_GTK_EVENT_STRINGS}.hide_signal_name,
 					agent (l_app_imp.gtk_marshal).on_widget_hide_signal_intermediary (a_c_object))
@@ -563,7 +563,7 @@ feature {EV_ANY_I} -- Implementation
 		do
 			if {GTK}.gtk_widget_get_window (c_object) /= default_pointer then
 				-- FIXME JV: gdk_window_process_updates has been deprecated since version 3.22 and should not be used in newly-written code.
-				--		{GTK2}.gdk_window_process_updates ({GTK}.gtk_widget_get_window (c_object), False)
+				--		{GDK}.gdk_window_process_updates ({GTK}.gtk_widget_get_window (c_object), False)
 				-- 		https://stackoverflow.com/questions/34912757/how-do-you-force-a-screen-refresh-in-gtk-3-8
 				{GTK}.gtk_widget_queue_draw (c_object)
 --TODO: check if removing this line causes trouble:				process_pending_events
@@ -594,7 +594,7 @@ feature {EV_ANY_IMP, EV_GTK_DEPENDENT_INTERMEDIARY_ROUTINES} -- Implementation
 					-- Remove previously set pointer.
 				l_window := {GTK}.gtk_widget_get_window (c_object)
 				if l_window /= default_pointer then
-					{GTK}.gdk_window_set_cursor (l_window, default_pointer)
+					{GDK}.gdk_window_set_cursor (l_window, default_pointer)
 				end
 				if attached parent_imp as l_parent_imp then
 					l_parent_imp.attached_interface.prune_all (attached_interface)
@@ -752,7 +752,7 @@ feature {EV_ANY, EV_ANY_I, EV_INTERMEDIARY_ROUTINES} -- Implementation
 	interface: detachable EV_WIDGET note option: stable attribute end;
 
 note
-	copyright:	"Copyright (c) 1984-2021, Eiffel Software and others"
+	copyright:	"Copyright (c) 1984-2024, Eiffel Software and others"
 	license:	"Eiffel Forum License v2 (see http://www.eiffel.com/licensing/forum.txt)"
 	source: "[
 			Eiffel Software

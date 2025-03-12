@@ -60,7 +60,7 @@ feature {NONE} -- Initialization
 		do
 			consumed_assembly := a_consumed
 				-- FIXME: It would be better if {CONF_GROUP}.name was a READABLE_STRING_32 instance.
-			name := assembly_name.as_lower
+			name := assembly_name
 			target := a_target
 			cache_path := a_cache_path
 			create location.make (a_consumed.location.name, a_target)
@@ -299,6 +299,7 @@ feature -- Access queries
 			else
 				d := dotnet_classes
 			end
+
 			if attached d then
 				Result := d.item (a_class)
 			end
@@ -461,7 +462,7 @@ invariant
 	assemblies_not_void: assemblies /= Void
 
 note
-	copyright:	"Copyright (c) 1984-2021, Eiffel Software"
+	copyright:	"Copyright (c) 1984-2023, Eiffel Software"
 	license:	"GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[

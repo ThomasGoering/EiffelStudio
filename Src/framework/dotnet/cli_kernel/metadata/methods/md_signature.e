@@ -8,6 +8,9 @@ note
 deferred class
 	MD_SIGNATURE
 
+inherit
+	DEBUG_OUTPUT
+
 feature {NONE} -- Initialization
 
 	make
@@ -62,6 +65,24 @@ feature -- Settings
 			end
 		end
 
+	set_generic_parameter_type (element_type: INTEGER_8; a_param_index: INTEGER)
+			-- note: `a_param_index` is 0-based.
+		require
+			expected_data: (element_type = {MD_SIGNATURE_CONSTANTS}.Element_type_mvar) implies
+				a_param_index >= 0
+		do
+			internal_put (element_type, current_position)
+			current_position := current_position + 1
+			inspect
+				element_type
+			when
+				{MD_SIGNATURE_CONSTANTS}.Element_type_mvar
+			then
+				compress_data (a_param_index)
+			else
+			end
+		end
+
 feature -- Copy
 
 	as_special: SPECIAL [NATURAL_8]
@@ -88,6 +109,25 @@ feature -- Copy
 			-- Copy of Current as ARRAY
 		do
 			create Result.make_from_special (as_special)
+		end
+
+feature -- Status report
+
+	debug_output: STRING
+		local
+			n: INTEGER
+			n8: NATURAL_8
+		do
+			n := count * 2
+			create Result.make (n)
+			across
+				as_array as ic
+			loop
+				n8 := ic.item
+				Result.append_string (n8.to_hex_string)
+				Result.append_character('-')
+			end
+			Result.remove_tail (1)
 		end
 
 feature {NONE} -- Implementation

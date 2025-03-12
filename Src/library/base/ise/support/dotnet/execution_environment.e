@@ -16,6 +16,8 @@ feature -- Access
 			-- Arguments that were used to start current execution.
 		once
 			create Result
+		ensure
+			instance_free: class
 		end
 
 	command_line: ARGUMENTS
@@ -24,6 +26,8 @@ feature -- Access
 			"Use `arguments' instead for handling Unicode command lines. [2017-05-31]"
 		once
 			create Result
+		ensure
+			instance_free: class
 		end
 
 	current_working_path: PATH
@@ -35,6 +39,7 @@ feature -- Access
 				create Result.make_current
 			end
 		ensure
+			instance_free: class
 			result_not_void: Result /= Void
 		end
 
@@ -48,6 +53,9 @@ feature -- Access
 			else
 				Result := "."
 			end
+		ensure
+			instance_free: class
+			result_not_void: Result /= Void
 		end
 
 	default_shell: STRING_32
@@ -58,6 +66,8 @@ feature -- Access
 			else
 				create Result.make_empty
 			end
+		ensure
+			instance_free: class
 		end
 
 	get (s: STRING): detachable STRING
@@ -71,6 +81,8 @@ feature -- Access
 			if attached {ENVIRONMENT}.get_environment_variable (s.to_cil) as cs then
 				create Result.make_from_cil (cs)
 			end
+		ensure
+			instance_free: class
 		end
 
 	item (s: READABLE_STRING_GENERAL): detachable STRING_32
@@ -83,6 +95,23 @@ feature -- Access
 			if attached {ENVIRONMENT}.get_environment_variable (s.to_cil) as cs then
 				create Result.make_from_cil (cs)
 			end
+		ensure
+			instance_free: class
+		end
+
+	temporary_directory_path: detachable PATH
+			-- Temporary directory name.
+		note
+			EIS: "name=temporary path", "src=https://en.wikipedia.org/wiki/Temporary_folder", "protocol=Uri"
+		local
+			ns: SYSTEM_STRING
+			s: STRING_32
+		once
+			ns := {SYSTEM_PATH}.get_temp_path
+			create s.make_from_cil (ns)
+			create Result.make_from_string (s)
+		ensure
+			instance_free: class
 		end
 
 	home_directory_path: detachable PATH
@@ -97,6 +126,8 @@ feature -- Access
 			else
 				create Result.make_empty
 			end
+		ensure
+			instance_free: class
 		end
 
 	user_directory_path: detachable PATH
@@ -117,6 +148,8 @@ feature -- Access
 					-- No possibility of a user directory, we let the caller handle that.
 				Result := Void
 			end
+		ensure
+			instance_free: class
 		end
 
 	home_directory_name: STRING
@@ -133,6 +166,8 @@ feature -- Access
 			else
 				Result := ""
 			end
+		ensure
+			instance_free: class
 		end
 
 	root_directory_name: STRING
@@ -148,6 +183,7 @@ feature -- Access
 				Result := "/"
 			end
 		ensure
+			instance_free: class
 			result_not_void: Result /= Void
 		end
 
@@ -157,9 +193,9 @@ feature -- Access
 		obsolete
 			"Use starting_environment which support unicode. [2017-05-31]"
 		do
-			if 
+			if
 				attached {IDICTIONARY} {ENVIRONMENT}.get_environment_variables as l_dic and then
-				attached {IENUMERATOR} l_dic.get_enumerator as l_enumerator 
+				attached {IENUMERATOR} l_dic.get_enumerator as l_enumerator
 			then
 				create Result.make (l_dic.count)
 				from
@@ -177,15 +213,17 @@ feature -- Access
 			else
 				create Result.make (0)
 			end
+		ensure
+			instance_free: class
 		end
 
 	starting_environment: HASH_TABLE [STRING_32, STRING_32]
 			-- Table of environment variables associated with current process,
 			-- indexed by variable name
 		do
-			if 
+			if
 				attached {IDICTIONARY} {ENVIRONMENT}.get_environment_variables as l_dic and then
-				attached {IENUMERATOR} l_dic.get_enumerator as l_enumerator 
+				attached {IENUMERATOR} l_dic.get_enumerator as l_enumerator
 			then
 				create Result.make (l_dic.count)
 				from
@@ -203,12 +241,17 @@ feature -- Access
 			else
 				create Result.make (0)
 			end
+		ensure
+			instance_free: class
+			result_attached: Result /= Void
 		end
 
 	available_cpu_count: NATURAL_32
-			-- Number of available CPUs.		
+			-- Number of available CPUs.
 		do
 			Result := {ENVIRONMENT}.processor_count.to_natural_32
+		ensure
+			instance_free: class
 		end
 
 feature -- Status
@@ -276,6 +319,8 @@ feature -- Status setting
 		do
 			{SYSTEM_THREAD}.sleep_time_span
 				({TIME_SPAN}.from_ticks (nanoseconds // 100))
+		ensure
+			instance_free: class
 		end
 
 feature {NONE} -- Implementation

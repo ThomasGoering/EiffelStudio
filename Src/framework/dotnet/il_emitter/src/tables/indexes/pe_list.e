@@ -10,8 +10,7 @@ inherit
 	PE_INDEX_BASE
 		redefine
 			make_with_index,
-			make_with_tag_and_index,
-			get_index_shift,
+			update_index,
 			has_index_overflow,
 			is_ready_for_render,
 			debug_output
@@ -23,23 +22,16 @@ feature {NONE} -- Initialization
 		do
 			Precursor (a_index)
 			is_list_index_set := True
-		ensure then
-			is_list_index_set
-		end
-
-	make_with_tag_and_index (a_tag: INTEGER; a_index: NATURAL_32)
-		do
-			Precursor (a_tag, a_index)
-			is_list_index_set := True
+			is_null_index := index = 0
 		ensure then
 			is_list_index_set
 		end
 
 	make_default
 		do
-				-- TODO: also use a default `tag`?
 			make_with_index (default_index)
 			is_list_index_set := False
+			is_null_index := True
 		end
 
 feature -- Access
@@ -54,16 +46,32 @@ feature -- Access
 feature -- Operations
 
 	update_index (idx: like index)
-		require
-			valid_index: idx >= 0
 		do
-			index := idx
+			Precursor (idx)
 			is_list_index_set := True
-		ensure
+			is_null_index := idx = 0
+		ensure then
 			is_list_index_set
 		end
 
+	update_missing_index (idx: like index)
+		do
+			update_index (idx)
+			is_null_index := True
+		ensure then
+			is_list_index_set
+		end
+
+	set_null_index
+		do
+			is_list_index_set := False
+			is_null_index := True
+			index := 0
+		end
+
 feature -- Status report
+
+	is_null_index: BOOLEAN
 
 	is_list_index_set: BOOLEAN
 			-- Is first index of Current list set ?
@@ -82,11 +90,6 @@ feature -- Status report
 		end
 
 feature -- Access
-
-	get_index_shift: INTEGER
-		do
-			Result := 0
-		end
 
 	has_index_overflow (a_sizes: ARRAY [NATURAL_32]): BOOLEAN
 		do

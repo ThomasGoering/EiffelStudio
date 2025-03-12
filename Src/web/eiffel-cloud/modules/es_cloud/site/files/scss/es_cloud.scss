@@ -19,6 +19,29 @@ div.user-view-cloud-box {
 	}
 }
 
+div.es-adapted-licenses {
+	div.es-license {
+		display: inline;
+	}
+}
+div.es-installation {
+	div.title {
+		font-weight: bold;
+	}
+}
+div.es-license {
+	span.warning {
+		color: red;
+	}
+	span.status.warning {
+		font-weight: bold;
+		color: red;
+	}
+	span.status.success {
+		font-weight: bold;
+		color: green;
+	}
+}
 div.es-licenses {
 	&.es-stats {
 		div.es-license {

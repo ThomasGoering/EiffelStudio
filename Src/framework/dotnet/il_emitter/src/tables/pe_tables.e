@@ -20,8 +20,12 @@ feature -- Creation Procedures
 	tTypeDef: NATURAL_32 = 2
 			-- definitions of classes and enumerations
 
+	tFieldPtr: NATURAL_32 = 3
+
 	tField: NATURAL_32 = 4
 			-- definitions of fields
+
+	tMethodPtr: NATURAL_32 = 5
 
 	tMethodDef: NATURAL_32 = 6
 			-- definitions of methods once end includes both managed and unmanaged
@@ -99,6 +103,32 @@ feature -- Creation Procedures
 	tMethodSpec: NATURAL_32 = 43
 
 	tGenericParamConstraint: NATURAL_32 = 44
+
+
+
+feature -- PDB tables
+
+	tDocument: NATURAL_32 = 48
+		-- The Document table
+
+
+	tMethodDebugInformation: NATURAL_32 = 49
+
+
+	tLocalScope: NATURAL_32 = 50
+
+
+	tLocalVariable: NATURAL_32 = 51
+
+
+	tLocalConstant: NATURAL_32 = 52
+
+	tImportScope: NATURAL_32 = 53
+
+	tStateMachineMethod: NATURAL_32 = 54
+
+	tCustomDebugInformation: NATURAL_32 = 55
+
 
 feature -- Instances
 

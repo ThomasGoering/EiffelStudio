@@ -1,13 +1,20 @@
 #!/bin/bash
 
 # Setup environment, and remaining installation steps
+cd workspace
+mkdir home
+export HOME=$(pwd)/home
+export XDG_DATA_HOME=${HOME}/.local/share
+mkdir -p ${XDG_DATA_HOME}
 
-echo Install dotnet environment
+echo Install NETCore net6.0 environment
 curl -sSL -o dotnet-install.sh https://dot.net/v1/dotnet-install.sh
 chmod +x ./dotnet-install.sh
-./dotnet-install.sh --version latest --channel 6.0 --install-dir $(pwd)/_dotnet
-export DOTNET_ROOT=$(pwd)/_dotnet
+export DOTNET_CLI_HOME=${HOME}
+export DOTNET_ROOT=${DOTNET_CLI_HOME}/.dotnet
+./dotnet-install.sh --version latest --channel 6.0 --install-dir ${DOTNET_ROOT}
 export PATH=$PATH:$DOTNET_ROOT:$DOTNET_ROOT/tools
+
 
 # Delivery building
 
@@ -15,14 +22,12 @@ export DELIV_WS_DIR=$1
 export DELIV_PORTERPACKAGE_TAR=$2
 export DELIV_IMAGE_OUTPUT=$3
 
-echo Build delivery ${DELIV_PORTERPACKAGE_TAR} DELIV_WS_DIR=$DELIV_WS_DIR
-
 if [ ! -d "$DELIV_WS_DIR" ]; then
 	echo Create $DELIV_WS_DIR
 	mkdir -p $DELIV_WS_DIR
 fi
 
-
+echo Build delivery ${DELIV_PORTERPACKAGE_TAR} DELIV_WS_DIR=$DELIV_WS_DIR
 cd $DELIV_WS_DIR
 STUDIO_PORTERPACKAGE_TAR=$DELIV_PORTERPACKAGE_TAR
 if [ -f "$STUDIO_PORTERPACKAGE_TAR" ]; then

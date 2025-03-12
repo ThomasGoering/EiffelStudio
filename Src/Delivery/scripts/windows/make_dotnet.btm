@@ -38,8 +38,6 @@ else
 	espawn -u:%TMP_ISE_C_COMPILER_VER% "%COMSPEC% /c nmake -f Makefile-release msbuild_40"
 endiff
 iff exist EiffelSoftware.Runtime.dll then
-:: 	For backward comptability keep .Net framework (v4.0) EiffelSoftware.Runtime.dll also directly in lib directory.
-	safe_copy EiffelSoftware.Runtime.dll %STUDIO_DIR%\studio\spec\%ISE_PLATFORM%\lib
 	safe_copy EiffelSoftware.Runtime.dll %STUDIO_DIR%\studio\spec\%ISE_PLATFORM%\lib\netframework
 	safe_copy EiffelSoftware.Runtime.dll %STUDIO_DIR%\studio\spec\%ISE_PLATFORM%\bin
 	safe_copy EiffelSoftware.Runtime.dll %STUDIO_DIR%\tools\spec\%ISE_PLATFORM%\bin
@@ -108,16 +106,14 @@ endiff
 
 remtrace Compiling Netcore Eiffel Metadata Consumer Executable nemdc.exe
 iff exist %STUDIO_DIR%\studio\spec\%ISE_PLATFORM%\bin\netcore\nemdc.exe then
-	remtrace nemdc tool is already built
+	remtrace nemdc tool is already built in  %STUDIO_DIR%\studio\spec\%ISE_PLATFORM%\bin\netcore\nemdc.exe
 else
 	cdd %EIFFEL_SRC%\dotnet\consumer_netcore
 	espawn "geant clobber" >>& %INSTALL_LOG%
-	espawn "geant install" >>& %INSTALL_LOG%
+	espawn "geant publish" >>& %INSTALL_LOG%
 	mkdir %STUDIO_DIR%\studio\spec\%ISE_PLATFORM%\bin\netcore
-	iff exist spec\%ISE_PLATFORM%\bin\nemdc.exe then
-		safe_copy spec\%ISE_PLATFORM%\bin\nemdc.exe %STUDIO_DIR%\studio\spec\%ISE_PLATFORM%\bin\netcore
-		safe_copy spec\%ISE_PLATFORM%\bin\*.dll %STUDIO_DIR%\studio\spec\%ISE_PLATFORM%\bin\netcore
-		safe_copy spec\%ISE_PLATFORM%\bin\*.json %STUDIO_DIR%\studio\spec\%ISE_PLATFORM%\bin\netcore
+	iff exist pub\%ISE_PLATFORM%\nemdc.exe then
+		safe_copy pub\%ISE_PLATFORM%\*.* %STUDIO_DIR%\studio\spec\%ISE_PLATFORM%\bin\netcore
 	else
 		remerror Could not compile nemdc.exe
 		iff defined REUSE_NETCORE_MDCONSUMER then

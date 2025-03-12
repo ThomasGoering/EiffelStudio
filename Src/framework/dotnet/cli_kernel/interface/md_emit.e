@@ -33,7 +33,7 @@ feature -- Access
 
 feature -- Save
 
-	prepare_to_save
+	prepare_to_save (fn: READABLE_STRING_GENERAL)
 			-- Prepare data to be save
 		do
 			-- To redefine if needed
@@ -182,6 +182,7 @@ feature -- Definition: Creation
 			type_name_not_empty: not type_name.is_empty
 			implementation_token_valid:
 				(implementation_token & Md_mask = Md_file) or
+				(implementation_token & Md_mask = md_assembly_ref) or
 				(implementation_token & Md_mask = Md_exported_type)
 			type_def_token_valid: type_def_token = 0 or (type_def_token & Md_mask = Md_type_def)
 		deferred
@@ -231,6 +232,18 @@ feature -- Definition: Creation
 			used_method_declaration_token_valid:
 				(used_method_declaration_token & Md_mask = Md_method_def) or
 				(used_method_declaration_token & Md_mask = Md_member_ref)
+		deferred
+		ensure
+			is_successful
+		end
+
+	define_method_spec (method_token: INTEGER; a_signature: MD_METHOD_SIGNATURE): INTEGER
+			-- Token for new method spec from `method_token` and `a_signature`.
+		require
+			method_token_valid:
+				(method_token & Md_mask = Md_method_def) or
+				(method_token & Md_mask = Md_member_ref)
+			signature_not_void: a_signature /= Void
 		deferred
 		ensure
 			is_successful
@@ -354,6 +367,29 @@ feature -- Definition: Creation
 		ensure
 			is_successful
 			result_valid: Result & Md_mask = Md_custom_attribute
+		end
+
+	define_generic_param (a_name: CLI_STRING; token: INTEGER; index: INTEGER; param_flags: INTEGER; type_constratins: ARRAY [INTEGER]): INTEGER
+			--  Define a formal type parameter for the given TypeDef or MethodDef `token'.
+			--| token: TypeDef or MethodDef
+			--| type_constratins : Array of type constraints (TypeDef,TypeRef,TypeSpec)
+			--| index:  Index of the type parameter
+			--| param_flags: Flags, for future use (e.g. variance)
+			--| a_name: Name
+		require
+			valid_token: (token & Md_mask = Md_type_def) or
+				(token & Md_mask = Md_method_def)
+			valid_type_constraints: type_constratins.for_all (
+						agent (item: INTEGER): BOOLEAN
+							do
+								Result := (item & Md_mask = Md_type_def) or
+									(item & Md_mask = Md_type_def) or
+									(item & Md_mask = Md_type_ref)
+							end
+					)
+		deferred
+		ensure
+			is_successful
 		end
 
 feature -- Settings

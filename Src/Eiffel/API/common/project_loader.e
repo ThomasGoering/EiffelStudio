@@ -154,7 +154,7 @@ feature -- Loading
 							if not has_error then
 									-- check if precompiles are ok, otherwise (re)create them
 								if is_recompile_from_scrach then
-									eiffel_layout.set_precompile (lace.target.setting_msil_generation)
+									eiffel_layout.set_precompile (lace.target.setting_msil_generation, lace.target.setting_msil_clr_version)
 								end
 
 								lace.check_location_mappings
@@ -446,7 +446,7 @@ feature -- Status report
 			-- Iron packages the user wants to install?
 
 	is_iron_execution_error: BOOLEAN
-			-- Was there an error during the last iron command execution?	
+			-- Was there an error during the last iron command execution?
 			-- i.e: iron packages installation.
 
 feature {NONE} -- Status report
@@ -610,7 +610,14 @@ feature {NONE} -- Settings
 					end
 					if
 						not l_key.is_case_insensitive_equal (eiffel_layout.default_il_environment.ise_dotnet_framework_env) and then
+						not l_key.is_case_insensitive_equal (eiffel_layout.default_il_environment.ise_dotnet_packs_env) and then
+						not l_key.is_case_insensitive_equal (eiffel_layout.default_il_environment.ise_dotnet_shared_env) and then
+						not l_key.is_case_insensitive_equal (eiffel_layout.default_il_environment.ise_dotnet_platform_env) and then
+						not l_key.is_case_insensitive_equal (eiffel_layout.default_il_environment.ise_dotnet_tfm_env) and then
+						not l_key.is_case_insensitive_equal (eiffel_layout.default_il_environment.ise_dotnet_version_env) and then
 						not l_key.is_case_insensitive_equal ({EIFFEL_CONSTANTS}.ise_precomp_env) and then
+						not l_key.is_case_insensitive_equal ({EIFFEL_CONSTANTS}.ise_emdc_env) and then
+						not l_key.is_case_insensitive_equal ({EIFFEL_CONSTANTS}.ise_dotnet_assemblies_path_env) and then
 						not same_environment_variable_value (l_new_val, l_old_val)
 					then
 						ask_environment_update (l_key, l_old_val, l_new_val)
@@ -1148,7 +1155,7 @@ feature {NONE} -- Implementation
 					-- The library is specified as name only
 				l_library_name := a_library.name
 
-					-- Guess location					
+					-- Guess location
 				l_ecf_path := {STRING_32} "$ISE_LIBRARY/library/" + l_library_name + "/" + l_library_name + "-safe" + {EIFFEL_CONSTANTS}.dotted_config_extension
 				create l_loc.make (l_ecf_path, a_target)
 				if not ut.file_path_exists (l_loc.evaluated_path) then
@@ -1183,7 +1190,7 @@ feature {NONE} -- Implementation
 		end
 
 note
-	copyright: "Copyright (c) 1984-2019, Eiffel Software"
+	copyright: "Copyright (c) 1984-2023, Eiffel Software"
 	license: "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[

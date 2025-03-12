@@ -49,7 +49,7 @@ feature {NONE} -- Initialization
 
 			c_screen := {GDK}.gdk_screen_get_default
 			c_visual := {GDK}.gdk_screen_get_rgba_visual (c_screen)
-			if not c_visual.is_default_pointer and {GTK}.gdk_screen_is_composited (c_screen) then
+			if not c_visual.is_default_pointer and {GDK}.gdk_screen_is_composited (c_screen) then
 				{GTK}.gtk_widget_set_visual (c_win, c_visual)
 			end
 			{GTK}.gtk_widget_set_app_paintable (c_win, True)
@@ -204,7 +204,7 @@ feature {EV_ANY} -- Size change
 	discard_pixbuf
 		do
 			if not pixbuf.is_default_pointer then
-				{GTK}.g_object_unref (pixbuf)
+				{GDK}.g_object_unref (pixbuf)
 				pixbuf := default_pointer
 				pixbuf_rectangle := Void
 			end
@@ -513,7 +513,7 @@ feature {EV_ANY} -- Execution
 	interface: detachable EV_DOCKABLE_SOURCE_HINT note option: stable attribute end
 
 note
-	copyright: "Copyright (c) 1984-2021, Eiffel Software and others"
+	copyright: "Copyright (c) 1984-2023, Eiffel Software and others"
 	license: "Eiffel Forum License v2 (see http://www.eiffel.com/licensing/forum.txt)"
 	source: "[
 			Eiffel Software

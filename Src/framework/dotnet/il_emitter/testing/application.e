@@ -19,7 +19,7 @@ feature -- Testing
 	default_tests: ARRAY [READABLE_STRING_GENERAL]
 		once
 				--Result := {ARRAY [READABLE_STRING_GENERAL]} <<"tk.empty_assembly", "tk.define_method_net2", "om.method_assembly">>
-			Result := {ARRAY [READABLE_STRING_GENERAL]} <<"tk.assembly">> --
+			Result := {ARRAY [READABLE_STRING_GENERAL]} <<"md.remap_table_case4">> --
 			-- "tk.define_implementation","tk.modules", "tk.define_class_app_net6", "tk.modules_net_framework""tk.basic_interface",
 			-- "tk.interface_inheritance","tk.modules","tk.define_entry_point_net6", "tk.define_implementation", "tk.define_interface", "tk.ast_process"
 		end
@@ -35,10 +35,15 @@ feature -- Testing
 				test_metadata_tables_token_interface (tn.head (2), tn.substring (4, tn.count))
 			elseif tn.starts_with ("om.") then
 				test_metadata_tables_object_model (tn.head (2), tn.substring (4, tn.count))
+			elseif tn.starts_with ("md.") then
+				test_metadata_tables (tn.head (2), tn.substring (4, tn.count))
+
 			else
 				old_tests ("old", tn) --"test_11")
 			end
 --			post_test (tn)
+
+
 
 			execution_environment.change_working_path (curr)
 		rescue
@@ -159,6 +164,28 @@ feature -- Token tests
 
 		end
 
+	test_metadata_tables (cat, a_pattern: READABLE_STRING_GENERAL)
+		do
+			if is_test_included ("remap_tables", a_pattern) then
+				launch_test (cat, "tables", agent (create {TEST_REMAP_TABLES}).test_build_tables)
+			end
+			if is_test_included ("remap_table_case1", a_pattern) then
+				launch_test (cat, "remap_table_case1", agent (create {TEST_REMAP_TABLES}).test_remap_case1)
+			end
+			if is_test_included ("remap_table_case2", a_pattern) then
+				launch_test (cat, "remap_table_case2", agent (create {TEST_REMAP_TABLES}).test_remap_case2)
+			end
+			if is_test_included ("remap_table_case3", a_pattern) then
+				launch_test (cat, "remap_table_case3", agent (create {TEST_REMAP_TABLES}).test_remap_case3)
+			end
+			if is_test_included ("remap_table_case4", a_pattern) then
+				launch_test (cat, "remap_table_case4", agent (create {TEST_REMAP_TABLES}).test_remap_case4)
+			end
+			if is_test_included ("remap_table_case5", a_pattern) then
+				launch_test (cat, "remap_table_case5", agent (create {TEST_REMAP_TABLES}).test_remap_case5)
+			end
+		end
+
 feature -- Object model tests
 
 	test_metadata_tables_object_model (cat, a_pattern: READABLE_STRING_GENERAL)
@@ -192,6 +219,7 @@ feature -- Initialization
 			tests: ITERABLE [READABLE_STRING_GENERAL]
 			conv: BYTE_ARRAY_CONVERTER
 			p: PATH
+			md: MD_TABLE_MOCK
 		do
 			create p.make_current
 			starting_directory := p.absolute_path

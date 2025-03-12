@@ -36,6 +36,14 @@ feature -- Settings
 		deferred
 		end
 
+	is_basic_auth_allowed: BOOLEAN
+		deferred
+		end
+
+	is_sign_in_challenge_auth_allowed: BOOLEAN
+		deferred
+		end
+
 	is_verbose (a_level: INTEGER): BOOLEAN
 			-- has Verbose output for level `a_level` ?
 			-- (mostly for debugging).
@@ -81,6 +89,11 @@ feature -- Access
 		do
 				-- TODO: get a magic login link, if supported.
 			Result := associated_website_url
+		end
+
+	view_installation_website_url (inst: ES_ACCOUNT_INSTALLATION): READABLE_STRING_8
+		do
+			Result := associated_website_url + "/installations/" + inst.id
 		end
 
 	new_account_website_url: READABLE_STRING_8
@@ -163,6 +176,16 @@ feature -- Access
 		deferred
 		end
 
+feature -- Installation
+
+	account_installation (acc: ES_ACCOUNT; a_installation_id: READABLE_STRING_GENERAL): detachable ES_ACCOUNT_INSTALLATION
+		deferred
+		end
+
+	update_installation_license (acc: ES_ACCOUNT; inst: ES_ACCOUNT_INSTALLATION; lic: ES_ACCOUNT_LICENSE)
+		deferred
+		end
+
 feature -- Remember credentials
 
 	kept_credential: detachable TUPLE [username: READABLE_STRING_32; password: detachable READABLE_STRING_32]
@@ -184,6 +207,11 @@ feature -- Sign in
 		deferred
 		end
 
+	sign_in_with_credential_as_client (a_username: READABLE_STRING_GENERAL; a_password: READABLE_STRING_GENERAL)
+			-- Connect with `a_username:a_password`, on success set the associated `active_account`.
+		deferred
+		end
+
 	sign_in_with_credential (a_username: READABLE_STRING_GENERAL; a_password: READABLE_STRING_GENERAL)
 			-- Connect with `a_username:a_password`, on success set the associated `active_account`.
 		deferred
@@ -191,6 +219,16 @@ feature -- Sign in
 
 	sign_in_with_access_token (a_username: READABLE_STRING_GENERAL; tok: READABLE_STRING_8)
 			-- Connect as `a_username` with token `tok`, on success set the associated `active_account`.
+		deferred
+		end
+
+	new_cloud_sign_in_request (a_info: detachable READABLE_STRING_GENERAL): detachable ES_CLOUD_SIGN_IN_REQUEST
+			-- Request a new sign-in challenge  (sign-in using browser)
+		deferred
+		end
+
+	check_cloud_sign_in_request (rqst: ES_CLOUD_SIGN_IN_REQUEST)
+			-- Check status of sign-in challenge request, and get associated data if approved.
 		deferred
 		end
 
@@ -447,7 +485,7 @@ feature {NONE} -- Implementation
 invariant
 
 note
-	copyright: "Copyright (c) 1984-2023, Eiffel Software"
+	copyright: "Copyright (c) 1984-2024, Eiffel Software"
 	license: "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[

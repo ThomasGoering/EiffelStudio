@@ -270,17 +270,53 @@ feature -- Generation
 		local
 			l_source_name: PATH
 			l_target_name: like {PROJECT_DIRECTORY}.path
+			l_assembly_location: like {PROJECT_DIRECTORY}.path
 			l_has_local, retried: BOOLEAN
 			l_precomp: REMOTE_PROJECT_DIRECTORY
 			l_viop: VIOP
 			l_use_optimized_precomp: BOOLEAN
 			l_assemblies: STRING_TABLE [CONF_PHYSICAL_ASSEMBLY_INTERFACE]
 			l_state: CONF_STATE
-			vars: STRING_TABLE [READABLE_STRING_GENERAL]
+			vars: CIL_PROJECT_INFO
+			l_assembly_references: ARRAYED_LIST [TUPLE [name: READABLE_STRING_GENERAL; version: detachable READABLE_STRING_GENERAL]]
+			fut: FILE_UTILITIES
 		do
 			if not retried then
 					-- Create the Assemblies directory if it does not already exist
 				project_location.create_local_assemblies_directory (is_finalizing)
+
+				if system.is_il_netcore then
+					if is_finalizing then
+						l_assembly_location := project_location.final_path
+					else
+						l_assembly_location := project_location.workbench_path
+					end
+				else
+					l_assembly_location := assembly_location (is_finalizing)
+				end
+
+					-- Assembly references
+				create l_assembly_references.make (0)
+				if cil_generator.is_using_multi_assemblies then
+						-- FIXME: find better source of generated assembly list.
+					if fut.file_path_exists (l_assembly_location.extended ("lib" + system.name + ".c")) then
+						l_assembly_references.force (["lib" + system.name, system.msil_version])
+					end
+					if attached fut.file_names (l_assembly_location.name) as lst then
+						across
+							lst as ic
+						loop
+							if
+								attached ic.item as fn and then
+								fn.starts_with ("assembly_") and then
+								fn.ends_with_general (".dll")
+							then
+								fn.remove_tail (4)
+								l_assembly_references.force ([fn, system.msil_version])
+							end
+						end
+					end
+				end
 
 					-- Copy referenced local assemblies
 				l_state := universe.conf_state
@@ -292,7 +328,8 @@ feature -- Generation
 				loop
 					if attached {CONF_PHYSICAL_ASSEMBLY} l_assemblies.item_for_iteration as l_as then
 						if l_as.is_enabled (l_state) and then not l_as.is_in_gac then
-							copy_to_local (l_as.location.build_path ({STRING_32} "", l_as.location.original_file), assembly_location (is_finalizing), Void)
+							l_assembly_references.force ([l_as.assembly_name, l_as.assembly_version])
+							copy_to_local (l_as.location.build_path ({STRING_32} "", l_as.location.original_file), l_assembly_location, Void, True)
 							l_has_local := True
 						end
 					else
@@ -323,10 +360,11 @@ feature -- Generation
 							error_handler.insert_warning (l_viop, universe.target.options.is_warning_as_error)
 						end
 
-						copy_to_local (l_precomp.assembly_driver (l_use_optimized_precomp), assembly_location (is_finalizing), Void)
-						copy_to_local (l_precomp.assembly_helper_driver (l_use_optimized_precomp), assembly_location (is_finalizing), Void)
+						l_assembly_references.force ([l_precomp.system_name, Void])
+						copy_to_local (l_precomp.assembly_driver (l_use_optimized_precomp), l_assembly_location, Void, True)
+						copy_to_local (l_precomp.assembly_helper_driver (l_use_optimized_precomp), l_assembly_location, Void, True)
 						if not l_use_optimized_precomp or l_precomp.line_generation then
-							copy_to_local (l_precomp.assembly_debug_info (l_use_optimized_precomp), assembly_location (is_finalizing), Void)
+							copy_to_local (l_precomp.assembly_debug_info (l_use_optimized_precomp), l_assembly_location, Void, is_debug_enabled)
 						end
 
 						Workbench.Precompilation_directories.forth
@@ -335,26 +373,22 @@ feature -- Generation
 
 					-- Copy configuration file to be able to load up local assembly.
 				if l_has_local then
-					if is_finalizing then
-						l_target_name := project_location.final_path
-					else
-						l_target_name := project_location.workbench_path
-					end
 					if system.is_il_netcore then
-							-- FIXME: ... resolve variables !!!
-						vars := project_variables (System)
-
-						l_source_name := eiffel_layout.generation_templates_path.extended ("netcore.runtimeconfig.json.template")
-						copy_template_to_local (l_source_name, vars, l_target_name, System.name.to_string_32 + ".runtimeconfig.json")
-
-						l_source_name := eiffel_layout.generation_templates_path.extended ("netcore.deps.json.template")
-						copy_template_to_local (l_source_name, vars, l_target_name, System.name.to_string_32 + ".deps.json")
+						create vars.make_from_system (system)
+						deploy_netcore_runtimeconfig_json_file (vars, l_assembly_location, System.name.to_string_32 + ".runtimeconfig.json")
+						deploy_netcore_deps_json_file (vars, l_assembly_references, System, l_assembly_location, System.name.to_string_32 + ".deps.json")
+						deploy_netcore_cs_wrapper_files (vars, System, l_assembly_location)
 					else
+						if is_finalizing then
+							l_target_name := project_location.final_path
+						else
+							l_target_name := project_location.workbench_path
+						end
 						-- Compute name of configuration file: It is `system_name.xxx.config'
 						-- where `xxx' is either `exe' or `dll'.
 
 						l_source_name := eiffel_layout.generation_templates_path.extended ("assembly_config.xml")
-						copy_to_local (l_source_name, l_target_name, {STRING_32} "" + System.name + "." + System.msil_generation_type + ".config")
+						copy_to_local (l_source_name, l_target_name, {STRING_32} "" + System.name + "." + System.msil_generation_type + ".config", True)
 					end
 				end
 			else
@@ -370,74 +404,242 @@ feature -- Generation
 			end
 		end
 
-	project_variables (a_system: SYSTEM_I): STRING_TABLE [READABLE_STRING_GENERAL]
+	deploy_netcore_runtimeconfig_json_file (vars: CIL_PROJECT_INFO; a_target_directory: PATH; a_target_filename: READABLE_STRING_GENERAL)
 		local
-			s, maj, min, sub: STRING_32
-			i,j: INTEGER
-			l_fmwk_name, l_fmwk_version: STRING_32
+			f: PLAIN_TEXT_FILE
+			s: STRING
 		do
-			create Result.make (7)
-			Result ["SYSTEM_NAME"] := a_system.name
-			if
-				attached a_system.msil_version as l_msil_version and then
-				not l_msil_version.is_empty
-			then
-				Result ["SYSTEM_VERSION"] := l_msil_version
-			else
-				Result ["SYSTEM_VERSION"] := "1.0.0" -- Default?
-			end
 
-			Result ["SYSTEM_TYPE"] := a_system.msil_generation_type -- dll | exe
+			s := "[
+{
+  "runtimeOptions": {
+    "tfm": "${FRAMEWORK_MONIKER}",
+    "framework": {
+      "name": "${FRAMEWORK_NAME}",
+      "version": "${FRAMEWORK_VERSION}"
+    },
+    "additionalProbingPaths": [ "./Assemblies/" ]
+  }
+}
+			]"
+			s.replace_substring_all ("${FRAMEWORK_MONIKER}", to_json_string (vars.framework_moniker))
+			s.replace_substring_all ("${FRAMEWORK_NAME}", to_json_string (vars.framework_name))
+			s.replace_substring_all ("${FRAMEWORK_VERSION}", to_json_string (vars.framework_version))
 
-			s := a_system.clr_runtime_version
-			i := s.index_of ('/', 1)
-			if i > 0 then
-				l_fmwk_name := s.head (i - 1)
-				l_fmwk_version := s.substring (i + 1, s.count)
-			else
-				l_fmwk_name := s
-				l_fmwk_version := ""
-			end
-			Result ["FRAMEWORK_NAME"] := l_fmwk_name -- Microsoft.NETCore.App
-			Result ["FRAMEWORK_VERSION"] := l_fmwk_version -- 6.0.0
+			create f.make_with_path (a_target_directory.extended (a_target_filename))
+			f.open_write
+			f.put_string (s)
+			f.close
+		end
 
-				-- FRAMEWORK_TARGET
-				-- tfm: net6.0, net7.0, .... netstandard2.1
-				--  (see: https://learn.microsoft.com/en-us/dotnet/standard/frameworks)
-			i := l_fmwk_version.index_of ('.', 1)
-			if i > 0 then
-				maj := l_fmwk_version.head (i - 1)
-				if maj.is_integer then
-					j := l_fmwk_version.index_of ('.', i + 1)
-					if j > 0 then
-						min := l_fmwk_version.substring (i + 1, j - 1)
-						sub := l_fmwk_version.substring (j + 1, l_fmwk_version.count)
-					else
-						min := "0"
-						sub := "0"
-					end
-					if maj.to_integer >= 5 then
-						s := {STRING_32} "net" + maj + "." + min
-					else
-						s := {STRING_32} "netcoreapp" + maj + "." + min
-					end
---					if sub.to_integer > 0 then
---						s := s + "." + sub
+	deploy_netcore_deps_json_file (vars: CIL_PROJECT_INFO; a_assembly_reference: LIST [TUPLE [name: READABLE_STRING_GENERAL; version: detachable READABLE_STRING_GENERAL]];
+				a_system: SYSTEM_I; a_target_directory: PATH; a_target_filename: READABLE_STRING_GENERAL)
+		local
+			f: PLAIN_TEXT_FILE
+			s, libs: STRING
+			libs_runtime: STRING
+			libs_deps: STRING
+			v: STRING_8
+			l_start: BOOLEAN
+		do
+			s := "[
+{
+  "runtimeTarget": {
+    "name": "${CLR_RUNTIME}",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    "${CLR_RUNTIME}": {
+      "${SYSTEM_NAME}/${SYSTEM_VERSION}": {
+        "runtime": {
+          "${SYSTEM_NAME}.${SYSTEM_TYPE}": {}
+        },
+		"dependencies": {${DEPENDENCY_LIBRARY}
+        }
+      }${LIBRARIES_RUNTIME}
+    }
+  },
+  "libraries": {
+    "${SYSTEM_NAME}/${SYSTEM_VERSION}": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }${LIBRARIES}
+  }
+}
+			]"
+
+			s.replace_substring_all ("${CLR_RUNTIME}", to_json_string (vars.clr_runtime))
+			s.replace_substring_all ("${SYSTEM_NAME}", to_json_string (vars.system_name))
+
+			s.replace_substring_all ("${SYSTEM_VERSION}", to_json_string (vars.system_version))
+			s.replace_substring_all ("${SYSTEM_TYPE}", to_json_string (vars.system_type))
+
+
+				-- FIXME: use the list of .Net assemblies, and generated assemblies to get versions and related information.
+			if a_assembly_reference /= Void and then not a_assembly_reference.is_empty then
+				create libs.make_empty
+				create libs_runtime.make_empty
+				create libs_deps.make_empty
+
+
+				l_start := True
+				-- FIXME
+				-- maybe we only need to add the eiffelsoftware.runtime
+				across
+					a_assembly_reference as ic
+				loop
+						-- FIXME: maybe use proper JSON encoding, eventually the JSON library.
+					v := to_json_string (ic.item.name)
+
+						-- FIXME
+						-- At the moment, we need to add all the dependencies.
+						--
+						-- The required dependencies are EiffelSoftware Runtime and third party libraries.
+						-- but we don't have a simple way to filter when an given assembly is not part
+						-- of the NetCore.
+						--
+
+					append_items (libs, libs_runtime, libs_deps, v, ic.item.version, l_start)
+					l_start := False
+
+-- TODO double check but it seems we only need this one.
+--					if is_finalizing then
+--						if v.is_case_insensitive_equal ("eiffelsoftware.runtime")  then
+--							append_items (libs, libs_runtime, libs_deps, v, ic.item.version, l_start)
+--							l_start := False
+--						end
+--					else
+--						if v.is_case_insensitive_equal ("eiffelsoftware.runtime") or else v.starts_with("assembly") then
+--							append_items (libs, libs_runtime, libs_deps, v, ic.item.version, l_start)
+--							l_start := False
+--						end
 --					end
-					Result ["FRAMEWORK_MONIKER"] := s
 
-					-- TODO: support
-					-- tfm: net6.0, net7.0, .... netstandard2.1  (see: https://learn.microsoft.com/en-us/dotnet/standard/frameworks)
 				end
 			end
 
---			Result ["CLR_RUNTIME_VERSION"] := a_system.clr_runtime_version
-			if l_fmwk_name.has_substring ("NETCore.App") then
-				s := {STRING_32} ".NETCoreApp,Version=v" + maj + "." + min
-				Result ["CLR_RUNTIME"] := s
-			else
-				Result ["CLR_RUNTIME"] := {STRING_32} ".NETCoreApp,Version=v6.0" -- Default?
+			s.replace_substring_all ("${DEPENDENCY_LIBRARY}", libs_deps)
+			s.replace_substring_all ("${LIBRARIES_RUNTIME}", libs_runtime)
+			s.replace_substring_all ("${LIBRARIES}", libs)
+
+			create f.make_with_path (a_target_directory.extended (a_target_filename))
+			f.open_write
+			f.put_string (s)
+			f.close
+		end
+
+	deploy_netcore_cs_wrapper_files (vars: CIL_PROJECT_INFO; a_system: SYSTEM_I; a_target_directory: PATH)
+		local
+			f: PLAIN_TEXT_FILE
+			s: STRING
+		do
+
+			s := "[
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>${SYSTEM_TYPE}</OutputType>
+    <TargetFramework>${FRAMEWORK_MONIKER}</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>
+        None
+    </ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="${SYSTEM_NAME}">
+      <HintPath>${SYSTEM_NAME}.${SYSTEM_TYPE}</HintPath>
+    </Reference>
+    <Reference Include="EiffelSoftware.Runtime">
+      <HintPath>Eiffelsoftware.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="assembly_*.dll"/>
+  </ItemGroup>
+</Project>
+			]"
+			s.replace_substring_all ("${FRAMEWORK_MONIKER}", vars.framework_moniker)
+			s.replace_substring_all ("${SYSTEM_NAME}", vars.system_name)
+			s.replace_substring_all ("${SYSTEM_TYPE}", vars.system_type)
+
+			create f.make_with_path (a_target_directory.extended ({STRING_32} "wrap_" + vars.system_name + ".csproj"))
+			f.open_write
+			f.put_string (s)
+			f.close
+
+			s := "[
+// At present, Eiffel.Net does not have a native solution similar to dotnet publish. 
+// However, a workaround is available. We can wrap our generated assemblies in a C# project
+// and call the entry point generated by the Eiffel application. 
+// This allows us to use the dotnet publish tool and its benefits until a native solution is developed.
+//
+// The dotnet publish command publishes a .NET application and its dependencies to a folder for deployment.
+// It compiles the application, reads its dependencies specified in the project file, and publishes the resulting files to a directory. 
+// The output is ready for deployment to a hosting system for execution and is the only officially supported way to prepare the application for deployment.
+
+using EiffelSoftware.Runtime;
+using System;
+using System.Runtime.InteropServices;
+public class wrap_${SYSTEM_NAME}
+{
+	public static void Main()
+    {
+         MAIN.Main();
+    }
+}
+			]"
+			s.replace_substring_all ("${SYSTEM_NAME}", vars.system_name)
+			create f.make_with_path (a_target_directory.extended ({STRING_32} "wrap_" + vars.system_name + ".cs"))
+			f.open_write
+			f.put_string (s)
+			f.close
+		end
+
+feature {NONE} -- Implementation
+
+	append_items (libs, libs_runtime, libs_deps: STRING; a_name: READABLE_STRING_8; version: detachable READABLE_STRING_GENERAL; l_start: BOOLEAN)
+				-- Append libraries and runtime libraries to the JSON file.
+		local
+			libs_tpl, lib_deps_tpl, libs_runtime_tpl: STRING
+			v, l_versioned_name: STRING_32
+		do
+			lib_deps_tpl := "          %"${LIB_NAME}%": %"${LIB_VERSION}%""
+
+			libs_runtime_tpl := "      %"${LIB_NAME_VERSION}%": { %"runtime%": {%"${LIB_NAME}.dll%":{}} }"
+
+				---- FIXME
+				-- at the moment the field serviceable and sha512 are using default values
+				-- false and empty string to be checked.
+			libs_tpl := "    %"${LIB_NAME_VERSION}%": { %"type%": %"reference%",  %"serviceable%": false,  %"sha512%": %"%" }"
+
+			libs.append (",%N")
+			libs.append (libs_tpl)
+
+			libs_runtime.append (",%N")
+			libs_runtime.append (libs_runtime_tpl)
+
+			if not l_start then
+				libs_deps.append (",")
 			end
+			libs_deps.append ("%N")
+			libs_deps.append (lib_deps_tpl)
+
+			libs_runtime.replace_substring_all ("${LIB_NAME}", to_json_string (a_name))
+			libs_deps.replace_substring_all ("${LIB_NAME}", to_json_string (a_name))
+			if attached version as l_version then
+				v := l_version
+			else
+				v := {STRING_32} "1.0.0.0" -- Default?
+			end
+			create l_versioned_name.make_from_string_general (a_name)
+			l_versioned_name.append_character ('/')
+			l_versioned_name.append (v)
+
+			libs_deps.replace_substring_all ("${LIB_VERSION}", to_json_string (v))
+			libs.replace_substring_all ("${LIB_NAME_VERSION}", to_json_string (l_versioned_name))
+			libs_runtime.replace_substring_all ("${LIB_NAME_VERSION}", to_json_string (l_versioned_name))
 		end
 
 feature {NONE} -- Type description
@@ -1169,9 +1371,10 @@ feature {NONE} -- File copying
 			end
 		end
 
-	copy_to_local (a_source: PATH; a_target_directory: PATH; a_destination_name: detachable READABLE_STRING_GENERAL)
+	copy_to_local (a_source: PATH; a_target_directory: PATH; a_destination_name: detachable READABLE_STRING_GENERAL; a_report_missing_source: BOOLEAN)
 			-- Copy `a_source' into `a_target_directory' directory under `a_destination_name' if specified,
 			-- or under the same name as `a_source'.
+			-- If `source` is missing report an error when `a_report_missing` is True.
 		require
 			a_source_not_void: a_source /= Void
 			a_source_not_empty: not a_source.is_empty
@@ -1201,7 +1404,7 @@ feature {NONE} -- File copying
 						l_source.close
 						l_target.close
 						l_target.set_date (l_source.date)
-					else
+					elseif a_report_missing_source then
 							-- Source does not exist, report the error.
 						create l_vicf.make (a_source.name, l_target.path.name)
 						error_handler.insert_warning (l_vicf, universe.target.options.is_warning_as_error)
@@ -1326,6 +1529,17 @@ feature {NONE} -- Progression
 		ensure
 			definition: Result implies a_class /= Void
 		end
+
+feature -- JSON encoding
+
+	to_json_string (s: READABLE_STRING_GENERAL): STRING_8
+			-- JSON encoded string of `s`.
+		do
+			Result := (create {JSON_STRING}.make_from_string_general (s)).item
+		ensure
+			class
+		end
+
 
 invariant
 	system_exists: System /= Void

@@ -204,9 +204,22 @@ typedef uintptr_t	rt_uint_ptr;
 #endif
 
 #ifdef EIF_IL_DLL
+#ifdef EIF_WINDOWS
 #define RT_IL	__declspec(dllexport)
 #else
 #define RT_IL	extern
+#endif
+#else
+#define RT_IL	extern
+#endif
+
+#ifndef EIF_WINDOWS
+/* For non Windows platform, when the Eiffel compiler generates DLL or .so files 
+ * __stdcall must be defined (at least to empty string).
+ */
+#ifndef __stdcall
+#define __stdcall
+#endif
 #endif
 
 #define rt_public				/* default C scope */

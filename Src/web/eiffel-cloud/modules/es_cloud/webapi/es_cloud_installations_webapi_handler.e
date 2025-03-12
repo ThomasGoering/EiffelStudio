@@ -46,6 +46,17 @@ feature -- Execution
 					else
 						report_missing_installation_id (a_version, l_user, req, res)
 					end
+				elseif req.is_put_request_method then
+					if attached {WSF_STRING} req.path_parameter ("installation_id") as iid then
+						l_inst_id := iid.value
+					elseif attached {WSF_STRING} req.form_parameter ("installation_id") as iid then
+						l_inst_id := iid.value
+					end
+					if l_inst_id /= Void then
+						handle_user_installation_put (a_version, l_user, l_inst_id, req, res)
+					else
+						report_missing_installation_id (a_version, l_user, req, res)
+					end
 				elseif req.is_delete_request_method then
 					handle_user_delete (a_version, l_user, req, res)
 				else
@@ -122,6 +133,19 @@ feature -- Execution
 							r.add_link ("sessions", "sessions", r.api.absolute_url (r.location + "/session/", Void))
 						end
 						r.add_self (r.location)
+							-- Added all adapted licenses ... the user should be able to change current licence
+						if attached es_cloud_api.other_adapted_licenses (a_user, inst) as l_adapted_licenses then
+								-- All valid licenses, so the user may pick from one of them.
+							create tb.make (l_adapted_licenses.count)
+							across
+								l_adapted_licenses as ic
+							loop
+								if attached ic.item as lic then
+									tb.force (license_to_table (lic), lic.key)
+								end
+							end
+							r.add_table_iterator_field ("es:adapted_licenses", tb)
+						end
 					else
 						r := new_error_response ("Installation not found", req, res)
 					end
@@ -307,7 +331,7 @@ feature -- Execution
 			f: CMS_FORM
 			l_op: READABLE_STRING_GENERAL
 			l_installation: ES_CLOUD_INSTALLATION
-			lic: ES_CLOUD_LICENSE
+			lic, l_new_lic: ES_CLOUD_LICENSE
 		do
 			if a_user.same_as (api.user) then --or else api.has_permission ({ES_CLOUD_MODULE}.perm_manage_es_accounts) then
 				r := new_response (req, res)
@@ -337,10 +361,94 @@ feature -- Execution
 					end
 					if l_installation /= Void and lic /= Void then
 						l_op := if attached {WSF_STRING} req.form_parameter ("operation") as p_op then p_op.value else {STRING_32} "ping" end
-						handle_installation_operation (a_version, a_user, l_installation, lic, l_op, fd, req, res)
+						if l_op.is_case_insensitive_equal ("update_license") then
+							if attached {WSF_STRING} req.form_parameter ("license_id") as p_lic_id then
+								l_new_lic := es_cloud_api.license_by_key (p_lic_id.value)
+							end
+							if l_new_lic /= Void and then not l_new_lic.key.same_string (lic.key) then
+								if
+									(a_user.same_as (api.user) and then api.has_permission ({ES_CLOUD_MODULE}.perm_update_own_installations))
+									or else api.has_permission ({ES_CLOUD_MODULE}.perm_manage_es_accounts)
+								then
+										-- Update license for `l_installation`
+									es_cloud_api.update_installation_license (l_installation, l_new_lic)
+									r := new_response (req, res)
+									r.add_link ("es:installation", "installation", (api.absolute_url (r.location, Void) + "/" + api.url_encoded (l_installation.id)))
+									add_cloud_user_links_to (a_version, a_user, r)
+									add_user_links_to (a_user, r)
+									r.execute
+								else
+									r := new_access_denied_error_response (Void, req, res)
+									r.execute
+								end
+							else
+								r := new_error_response ("Error [update_license]: unexpected license", req, res)
+								add_cloud_user_links_to (a_version, a_user, r)
+								add_user_links_to (a_user, r)
+								r.execute
+							end
+						else
+							handle_installation_operation (a_version, a_user, l_installation, lic, l_op, fd, req, res)
+						end
 					else
 							-- Check for installation limit!
 						handle_new_installation (a_version, a_user, a_installation_id, fd.string_item ("info"), req, res)
+					end
+				else
+					r := new_error_response ("Error", req, res)
+					add_cloud_user_links_to (a_version, a_user, r)
+					add_user_links_to (a_user, r)
+					r.execute
+				end
+			else
+				r := new_access_denied_error_response (Void, req, res)
+				r.execute
+			end
+		end
+
+	handle_user_installation_put (a_version: READABLE_STRING_GENERAL; a_user: ES_CLOUD_USER; a_installation_id: READABLE_STRING_GENERAL; req: WSF_REQUEST; res: WSF_RESPONSE)
+		require
+			req.is_post_request_method
+		local
+			r: like new_response
+			f: CMS_FORM
+		do
+			if a_user.same_as (api.user) or else api.has_permission ({ES_CLOUD_MODULE}.perm_manage_es_accounts) then
+				r := new_response (req, res)
+				f := handle_user_installation_form (req)
+				f.process (r)
+				if
+					attached f.last_data as fd and then not fd.has_error
+				then
+					check
+						same_installation_id: attached fd.string_item ("installation_id") as f_installation_id and then a_installation_id.same_string (f_installation_id)
+					end
+					if
+						attached fd.string_item ("license_id") as f_license_id and then
+						attached fd.string_item ("new_license_id") as f_new_license_id and then
+						attached es_cloud_api.license_by_key (f_license_id) as lic and then
+						attached es_cloud_api.installation (a_installation_id, lic.id) as inst and then
+						attached es_cloud_api.license_by_key (f_new_license_id) as new_lic
+					then
+						if
+							(a_user.same_as (api.user) and then api.has_permission ({ES_CLOUD_MODULE}.perm_update_own_installations))
+							or else api.has_permission ({ES_CLOUD_MODULE}.perm_manage_es_accounts)
+						then
+							es_cloud_api.update_installation_license (inst, new_lic)
+							r.add_link ("es:installation", "installation", (api.absolute_url (r.location, Void) + "/" + api.url_encoded (inst.id)))
+							add_installation_to (a_version, a_user, inst, r)
+							add_cloud_user_links_to (a_version, a_user, r)
+							add_user_links_to (a_user, r)
+							r.execute
+						else
+							r := new_access_denied_error_response (Void, req, res)
+							r.execute
+						end
+					else
+						r := new_bad_request_error_response ("Missing value to assign installation to new license", req, res)
+						add_cloud_user_links_to (a_version, a_user, r)
+						add_user_links_to (a_user, r)
+						r.execute
 					end
 				else
 					r := new_error_response ("Error", req, res)
@@ -358,6 +466,8 @@ feature -- Execution
 		do
 			create Result.make (req.percent_encoded_path_info, "es-form")
 			Result.extend_text_field ("installation_id", Void)
+			Result.extend_text_field ("license_id", Void)
+			Result.extend_text_field ("new_license_id", Void)
 			Result.extend_text_field ("session_id", Void)
 			Result.extend_text_field ("info", Void)
 			Result.extend_text_field ("session_title", Void)
@@ -397,20 +507,29 @@ feature {NONE} -- User installation post handling
 						r.add_boolean_field ("es:plan_expired", True) -- For backward compatibility
 					elseif not a_license.is_valid (a_installation.platform, a_installation.product_version) then
 						-- ERROR: invalid license!
-						create err_msg.make_from_string_general ("invalid license")
-						if attached a_license.version as l_version then
-							create l_expecting.make_from_string ({STRING_32} " version:" + l_version)
-						end
-						if attached a_license.platforms_as_csv_string as l_platforms then
-							if l_expecting = Void then
-								create l_expecting.make_empty
+						create err_msg.make_from_string_general ({STRING_32} "invalid license <"+ a_license.key +{STRING_32} ">")
+						if not a_license.is_active then
+							if a_license.is_expired then
+								err_msg.append ({STRING_32} " EXPIRED")
+							elseif a_license.is_suspended then
+								err_msg.append ({STRING_32} " SUSPENDED")
+							else
+								err_msg.append ({STRING_32} " INACTIVE")
 							end
-							l_expecting.append ({STRING_32} " platforms:" + l_platforms)
+						else
+							if attached a_license.version as l_version then
+								create l_expecting.make_from_string ({STRING_32} " version=" + l_version)
+							end
+							if attached a_license.platforms_as_csv_string as l_platforms then
+								if l_expecting = Void then
+									create l_expecting.make_empty
+								end
+								l_expecting.append ({STRING_32} " platforms=" + l_platforms)
+							end
+							if l_expecting /= Void then
+								err_msg.append ({STRING_32} " (expecting " + l_expecting + ")")
+							end
 						end
-						if l_expecting /= Void then
-							err_msg.append ({STRING_32} " (expecting " + l_expecting + ")")
-						end
-
 						r := new_error_response (err_msg, req, res)
 						if attached a_license.version as l_version then
 							r.add_string_field ("es:version_limitation", l_version)
@@ -649,6 +768,7 @@ feature {NONE} -- User installation post handling
 					end
 				end
 				if inst = Void then
+					r := new_error_response ("Error: no license found for the installation", req, res)
 					if l_has_valid_license then
 						-- Has valid license, but probably reached installation limit!
 						-- TODO: report error!
@@ -657,7 +777,7 @@ feature {NONE} -- User installation post handling
 				else
 					add_installation_to (a_version, a_user, inst, r)
 				end
-				if l_valid_licenses /= Void then
+				if l_valid_licenses /= Void and then not l_valid_licenses.is_empty then
 						-- All valid licenses, so the user may pick from one of them.
 					create tb.make (l_valid_licenses.count)
 					across

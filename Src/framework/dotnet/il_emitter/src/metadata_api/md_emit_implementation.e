@@ -81,7 +81,6 @@ feature {MD_EMIT_BRIDGE} -- Change tables
 				{PE_TABLES}.tGenericParam, -- Not used.
 				{PE_TABLES}.tImplMap,
 				{PE_TABLES}.tMethodSemantics,
-				{PE_TABLES}.tMethodSpec, -- Not used
 				{PE_TABLES}.tNestedClass, -- Not used
 				{PE_TABLES}.tStandaloneSig
 			then
@@ -152,6 +151,21 @@ feature -- Factory
 				l_tag := {PE_TYPEDEF_OR_REF}.typeref
 			elseif a_token & Md_mask = Md_type_spec then
 				l_tag := {PE_TYPEDEF_OR_REF}.typespec
+			else
+				check should_not_occur: False end
+			end
+			create Result.make_with_tag_and_index (l_tag, a_index)
+		end
+
+	create_type_def_or_method_def (a_token: INTEGER; a_index: NATURAL_32): PE_TYPE_OR_METHOD_DEF
+			-- Create a new PE_TYPE_OR_METHOD_DEF instance with the given `a_token' and `a_index'.
+		local
+			l_tag: INTEGER
+		do
+			if a_token & Md_mask = Md_type_def then
+				l_tag := {PE_TYPE_OR_METHOD_DEF}.typedef
+			elseif a_token & Md_mask = md_method_def then
+				l_tag := {PE_TYPE_OR_METHOD_DEF}.methoddef
 			else
 				check should_not_occur: False end
 			end

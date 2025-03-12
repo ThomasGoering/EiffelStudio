@@ -198,6 +198,12 @@ feature -- Definition: creation
 				used_method_declaration_token)
 		end
 
+	define_method_spec (method_token: INTEGER; a_signature: MD_METHOD_SIGNATURE): INTEGER
+			-- Define a method spec from `method_token` and `a_signature`.
+		do
+			last_call_success := c_define_method_spec (item, method_token, a_signature.item.item, a_signature.count, $Result)
+		end
+
 	define_property (type_token: INTEGER; name: CLI_STRING; flags: NATURAL_32;
 			signature: MD_PROPERTY_SIGNATURE; setter_token: INTEGER; getter_token: INTEGER): INTEGER
 			-- Define property `name' for a type `type_token'.
@@ -292,6 +298,18 @@ feature -- Definition: creation
 				blob, blob_count, $Result)
 		end
 
+
+	define_generic_param (a_name: CLI_STRING; token: INTEGER; index: INTEGER; param_flags: INTEGER; type_constratins: ARRAY [INTEGER]): INTEGER
+			--  Define a formal type parameter for the given TypeDef or MethodDef `token'.
+			--| token: TypeDef or MethodDef
+			--| type_constratins : Array of type constraints (TypeDef,TypeRef,TypeSpec)
+			--| index:  Index of the type parameter
+			--| param_flags: Flags, for future use (e.g. variance)
+			--| a_name: Name
+		do
+			-- Not implemented in COM
+		end
+		
 feature -- Settings
 
 	set_module_name (a_name: CLI_STRING)
@@ -403,6 +421,15 @@ feature {NONE} -- Implementation
 			"C++ IMetaDataEmit signature (mdTypeDef, mdToken, mdToken): EIF_INTEGER use <cor.h>"
 		alias
 			"DefineMethodImpl"
+		end
+
+	c_define_method_spec (an_item: POINTER; method_token: INTEGER; a_signature: POINTER; sig_length: INTEGER; method_spec_token: TYPED_POINTER [INTEGER]): INTEGER
+
+			-- Call `IMetaDataEmit->DefineMethodImpl'.
+		external
+			"C++ IMetaDataEmit2 signature (mdToken, PCCOR_SIGNATURE, ULONG, mdMethodSpec *): EIF_INTEGER use <cor.h>"
+		alias
+			"DefineMethodSpec"
 		end
 
 	c_define_module_ref (an_item: POINTER; module_name: POINTER;
@@ -578,7 +605,7 @@ feature {NONE} -- Implementation
 		end
 
 note
-	copyright:	"Copyright (c) 1984-2023, Eiffel Software"
+	copyright:	"Copyright (c) 1984-2024, Eiffel Software"
 	license:	"GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[

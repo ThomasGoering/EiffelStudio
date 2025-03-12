@@ -29,6 +29,11 @@ feature {NONE} -- Initialization
 		do
 			create root_endpoint.make_from_string (cfg.root_endpoint)
 			create server_url.make_from_string (cfg.server_url)
+			if attached cfg.preferred_http_client as s then
+				create preferred_http_client.make_from_string (s)
+			else
+				preferred_http_client := Void
+			end
 			connection_timeout := cfg.connection_timeout
 			timeout := cfg.timeout
 			if attached cfg.user_agent as ua then
@@ -46,6 +51,10 @@ feature -- Access
 
 	user_agent: detachable IMMUTABLE_STRING_8
 
+	preferred_http_client: detachable IMMUTABLE_STRING_32
+			-- Name of preferred http_client implementation.
+			-- Hack to solve potential network or security issue.
+
 feature -- Builtin settings	
 
 	guest_period_in_days: INTEGER = 15
@@ -54,7 +63,7 @@ feature -- Builtin settings
 	default_session_heartbeat: NATURAL = 900 -- 15 * 60 s = 15 minutes
 			-- Delay between two heartbeat to track session activity.
 
-feature -- Settings	
+feature -- Settings
 
 	connection_timeout: INTEGER
 			-- Connection timeout in seconds.
@@ -89,6 +98,15 @@ feature -- Element change
 			user_agent := ua
 		end
 
+	set_preferred_http_client (n: detachable READABLE_STRING_GENERAL)
+		do
+			if n = Void then
+				preferred_http_client := Void
+			else
+				create preferred_http_client.make_from_string (n.as_lower)
+			end
+		end
+
 	set_connection_timeout (a_secs: like connection_timeout)
 		do
 			connection_timeout := a_secs
@@ -105,7 +123,7 @@ feature -- Element change
 		end
 
 ;note
-	copyright: "Copyright (c) 1984-2021, Eiffel Software"
+	copyright: "Copyright (c) 1984-2023, Eiffel Software"
 	license: "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[

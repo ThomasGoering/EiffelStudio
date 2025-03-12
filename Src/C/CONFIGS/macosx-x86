@@ -210,9 +210,9 @@ eiflib='finalized'
 if [ -n "$LD" ]; then
 	ld=$LD
 else
-	ld='ld'
+	ld=$cc
 fi
-ldflags='-arch i386'
+ldflags=''
 ldsharedflags="$ldflags -dynamiclib -flat_namespace -undefined suppress -o"
 libs='-lm'
 ln='/bin/ln'
@@ -230,15 +230,19 @@ mt_prefix='mt'
 mv='/bin/mv'
 prefix='lib'
 ranlib=':'
+obj_file_ext='o'
 shared_prefix='lib'
 shared_suffix='.dylib'
 shared_rt_suffix='.dylib'
 sharedlibs='-lm'
 mtsharedlibs='-lm -lpthread'
-sharedlibversion='.23.06'
-sharedlink=$cc
+sharedlibversion='.24.02'
+sharedlink=$ld
 suffix='.a'
 wkeiflib='wkbench'
+
+#IL generation
+il_flags='-DEIF_IL_DLL'
 
 #testing
 start_test='if [ ! -f finished ] ; then'

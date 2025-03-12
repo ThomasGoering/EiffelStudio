@@ -148,17 +148,15 @@ feature -- Access
 		do
 				-- Alias `managed_data' to be a C string so that we copy the raw sequence
 				-- of bytes into a STRING_8 but we do not include the null-terminating character.
-			create l_cstr.make_shared_from_pointer_and_count (managed_data.item, managed_data.count)
-			Result := l_cstr.substring_8 (1, managed_data.count - character_size)
+			create l_cstr.make_shared_from_pointer_and_count (managed_data.item, count * character_size)
+			Result := l_cstr.substring_8 (1, count * character_size)
 		end
 
 	string_32: STRING_32
 			-- Representation of Current up to the first null character.
-		local
-			u: UTF_CONVERTER
 		do
 				-- Taking the `raw_string' representation of Current, we decode it as a Unicode string.
-			Result := u.utf_16_0_pointer_to_escaped_string_32 (managed_data)
+			Result := substring (1, count)
 		end
 
 	substring (start_pos, end_pos: INTEGER): STRING_32
@@ -424,6 +422,8 @@ feature -- Element change
 			a_string_not_void: a_string /= Void
 		do
 			set_substring (a_string, 1, a_string.count)
+		ensure
+			a_string.same_string (string_32)
 		end
 
 	set_substring (a_string: READABLE_STRING_GENERAL; start_pos, end_pos: INTEGER)
@@ -439,6 +439,7 @@ feature -- Element change
 			u.escaped_utf_32_substring_into_utf_16_0_pointer (a_string, start_pos, end_pos,
 				managed_data, 0, upper_cell)
 			count := upper_cell.item // character_size
+--			managed_data.resize (upper_cell.item)
 		end
 
 	set_shared_from_pointer (a_ptr: POINTER)
