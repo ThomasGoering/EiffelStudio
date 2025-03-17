@@ -491,7 +491,9 @@ feature -- Settings
 			debug ("il_emitter")
 				if attached current_module as m then
 					if l_old_module = Void or else l_old_module /= m then
-						print (generator + ".set_current_module_with (...) -> switched to "+ m.module_name_with_extension +"%N")
+						print (generator + ".set_current_module_with (...) -> switched to ")
+						print (m.module_name_with_extension)
+						print ("%N")
 					end
 				end
 			end
@@ -561,7 +563,8 @@ feature -- Generation Structure
 		local
 			p: PATH
 			ext: READABLE_STRING_GENERAL
-			l_assembly_name_with_extension: STRING_32
+			l_assembly_name_with_extension: STRING
+			s32: STRING_32
 		do
 				-- For netcore, use multi-assemblies instead of multi-modules.
 			is_using_multi_assemblies := system.is_il_netcore
@@ -620,7 +623,13 @@ feature -- Generation Structure
 			if a_assembly_name.to_string_32.ends_with (ext) then
 				l_assembly_name_with_extension := a_assembly_name
 			else
-				l_assembly_name_with_extension := (create {PATH}.make_from_string (a_assembly_name)).appended_with_extension (ext).name
+				s32 := (create {PATH}.make_from_string (a_assembly_name)).appended_with_extension (ext).name
+				if s32.is_valid_as_string_8 then
+					l_assembly_name_with_extension := s32.to_string_8
+				else
+					check expected_non_unicode_name: False end
+					l_assembly_name_with_extension := {UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (s32)
+				end
 			end
 			create main_module.make (
 				l_assembly_name_with_extension, -- Extension is required
@@ -1045,14 +1054,14 @@ feature -- Generation Structure
 			(create {IL_RESOURCE_GENERATOR}.make (main_module, a_resources)).generate
 		end
 
-	define_file (a_module: IL_MODULE; a_file: READABLE_STRING_GENERAL; a_name: STRING; file_flags: INTEGER; a_signing: detachable MD_STRONG_NAME): INTEGER
+	define_file (a_module: IL_MODULE; a_file: READABLE_STRING_GENERAL; a_name: READABLE_STRING_GENERAL; file_flags: INTEGER; a_signing: detachable MD_STRONG_NAME): INTEGER
 			-- Add `a_file' of name `a_name' in list of files referenced by `a_module'.
 		require
 			a_module_not_void: a_module /= Void
 			a_file_not_void: a_file /= Void
 			a_name_not_void: a_name /= Void
 			a_file_valid: a_file.has_substring (a_name) and
-				a_name.same_string_general (
+				a_name.same_string (
 					a_file.substring (a_file.count - a_name.count + 1, a_file.count))
 			file_flags_valid:
 				(file_flags = {MD_FILE_FLAGS}.Has_meta_data) or
@@ -3194,6 +3203,7 @@ feature -- IL Generation
 			l_class_type: CLASS_TYPE
 			l_type_i, l_impl_type_i: TYPE_A
 			l_same_signature: BOOLEAN
+			l_dbg_document: DBG_DOCUMENT_WRITER
 			has_return_value: BOOLEAN
 		do
 			l_meth_token := feature_token (current_type_id, feat.feature_id)
@@ -3255,7 +3265,9 @@ feature -- IL Generation
 					l_same_signature)
 				then
 					if is_debug_info_enabled then
+						l_dbg_document := dbg_documents (l_sequence_point.written_class_id)
 						dbg_writer.open_method (l_meth_token)
+						dbg_writer.open_local_signature (l_dbg_document, method_body.local_token)
 						across
 							current_module.method_sequence_points.item (l_token) as p
 						loop
@@ -3267,12 +3279,13 @@ feature -- IL Generation
 							dbg_end_lines := l_sequence_point.end_lines
 							dbg_end_columns := l_sequence_point.end_columns
 							dbg_writer.define_sequence_points (
-								dbg_documents (l_sequence_point.written_class_id),
+								l_dbg_document,
 								dbg_offsets_count, dbg_offsets, dbg_start_lines, dbg_start_columns,
 								dbg_end_lines, dbg_end_columns
 								)
 						end
 						generate_local_debug_info (l_token, l_class_type)
+						dbg_writer.close_local_signature (l_dbg_document)
 						dbg_writer.close_method
 					end
 					method_writer.write_duplicate_body (l_token, l_meth_token)
@@ -3378,8 +3391,13 @@ feature -- IL Generation
 		local
 			l_meth_token: INTEGER
 			l_sequence_point_list: LINKED_LIST [like sequence_point]
+			l_dbg_document: DBG_DOCUMENT_WRITER
 		do
-			if not feat.is_attribute and then not feat.is_c_external and not feat.is_deferred then
+			if
+				not feat.is_attribute and then
+				not feat.is_c_external and
+				not feat.is_deferred
+			then
 				if is_implementation then
 					l_meth_token := implementation_feature_token (current_type_id, feat.feature_id)
 				else
@@ -3405,11 +3423,15 @@ feature -- IL Generation
 				method_writer.write_current_body
 
 				if is_debug_info_enabled then
+					l_dbg_document := dbg_documents (current_class.class_id)
+						-- Note: the local_token will be updated where needed by `open_local_signature`
+					dbg_writer.open_local_signature (l_dbg_document, method_body.local_token)
 					generate_local_debug_info (l_meth_token, current_class_type)
 					dbg_writer.define_sequence_points (
-						dbg_documents (current_class.class_id),
+						l_dbg_document,
 						dbg_offsets_count, dbg_offsets, dbg_start_lines, dbg_start_columns,
 						dbg_end_lines, dbg_end_columns)
+					dbg_writer.close_local_signature (l_dbg_document)
 					dbg_writer.close_method
 					l_sequence_point_list :=
 						current_module.method_sequence_points.item (l_meth_token)
@@ -4060,9 +4082,8 @@ feature -- IL Generation
 			l_meth_sig: like method_sig
 			l_field_sig: like field_sig
 			l_class_token: INTEGER
-			i, gen_i, nb: INTEGER
+			i, nb: INTEGER
 			l_context_class_type: CLASS_TYPE
-			p: CONSUMED_PROCEDURE
 			is_generic_method: BOOLEAN
 		do
 			is_generic_method := generic_method_parameters_info /= Void and then generic_method_parameters_info.has_generic
@@ -5085,7 +5106,7 @@ feature -- Assignments
 		local
 			l_token: INTEGER
 			l_type: TYPE_A
-			l_type_var, l_obj_var: INTEGER
+			l_obj_var: INTEGER
 		do
 			l_type := type_i.actual_type
 
@@ -5107,19 +5128,19 @@ feature -- Assignments
 					generate_current
 					generate_type_feature_call (l_type_feature_i)
 					generate_local (l_obj_var)
-					internal_generate_external_call (current_module.ise_runtime_token, 0, Runtime_class_name.as_string_8,
-							"attempted_on_rt_type", Static_type, <<System_object_class_name.as_string_8, type_class_name, System_object_class_name>>, System_object_class_name,
+					internal_generate_external_call (current_module.ise_runtime_token, 0, Runtime_class_name,
+							"attempted_on_rt_type", Static_type, <<System_object_class_name, type_class_name, System_object_class_name>>, System_object_class_name,
 							True, Void)
 				else
 					generate_current
 					put_integer_32_constant (l_formal_type.position)
-					internal_generate_external_call (current_module.ise_runtime_token, 0, Runtime_class_name.as_string_8,
-							"type_of_generic_parameter", Static_type, <<System_object_class_name.as_string_8, "System.Int32">>, system_type_class_name,
+					internal_generate_external_call (current_module.ise_runtime_token, 0, Runtime_class_name,
+							"type_of_generic_parameter", Static_type, <<System_object_class_name, "System.Int32">>, system_type_class_name,
 							False, Void)
 
 					generate_local (l_obj_var)
-					internal_generate_external_call (current_module.ise_runtime_token, 0, Runtime_class_name.as_string_8,
-							"attempted_on_type", Static_type, <<System_type_class_name.as_string_8, System_object_class_name>>, System_object_class_name,
+					internal_generate_external_call (current_module.ise_runtime_token, 0, Runtime_class_name,
+							"attempted_on_type", Static_type, <<System_type_class_name, System_object_class_name>>, System_object_class_name,
 							True, Void)
 				end
 				put_void
@@ -7393,11 +7414,12 @@ feature -- Line info
 				else
 					l_document := dbg_documents (a_class_type.associated_class.class_id)
 				end
+				dbg_writer.open_local_signature (l_document, method_body.local_token)
 				dbg_writer.define_sequence_points (
 					l_document,
 					dbg_offsets_count, dbg_offsets, dbg_start_lines, dbg_start_columns,
 					dbg_end_lines, dbg_end_columns)
-
+				dbg_writer.close_local_signature (l_document)
 				l_sequence_point_list :=
 					current_module.method_sequence_points.item (current_feature_token)
 				if l_sequence_point_list = Void then
@@ -8522,7 +8544,7 @@ note
 		"CA011", "CA011: too many arguments",
 		"CA033", "CA033: very long class",
 		"CA093", "CA093: manifest array type mismatch"
-	copyright:	"Copyright (c) 1984-2023, Eiffel Software"
+	copyright:	"Copyright (c) 1984-2024, Eiffel Software"
 	license:	"GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[

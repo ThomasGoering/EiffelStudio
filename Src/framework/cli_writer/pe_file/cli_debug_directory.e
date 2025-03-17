@@ -20,7 +20,10 @@ inherit
 		end
 
 create
-	make
+	make,
+	make_codeview,
+	make_pdbchecksum,
+	make_reproducible
 
 feature {NONE} -- Initialization
 
@@ -32,10 +35,36 @@ feature {NONE} -- Initialization
 			c_set_date_stamp (item, {CLI_TIME}.time (default_pointer))
 			c_set_major_version (item, 0)
 			c_set_minor_version (item, 0)
+			c_set_type (item, {CLI_DEBUG_CONSTANTS}.type_unknown)
+		end
+
+	make_codeview
+		do
+			make
 			c_set_type (item, {CLI_DEBUG_CONSTANTS}.Type_codeview)
 		end
 
+	make_pdbchecksum
+		do
+			make
+			c_set_type (item, {CLI_DEBUG_CONSTANTS}.type_pdbchecksum)
+			c_set_major_version (item, 1)
+		end
+
+
+	make_reproducible
+		do
+			make
+			c_set_type (item, {CLI_DEBUG_CONSTANTS}.type_reproducible)
+			c_set_major_version (item, 0)
+		end
+
 feature -- Settings
+
+	set_time_date_stamp (a_time_date_stamp: INTEGER)
+		do
+			c_set_date_stamp (item, a_time_date_stamp)
+		end
 
 	set_size (a_size: INTEGER)
 			--
@@ -122,7 +151,7 @@ feature {NONE} -- Implementation
 		end
 
 note
-	copyright:	"Copyright (c) 1984-2023, Eiffel Software"
+	copyright:	"Copyright (c) 1984-2024, Eiffel Software"
 	license:	"GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[

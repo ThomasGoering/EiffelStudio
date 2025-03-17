@@ -13,7 +13,15 @@ feature -- Access
 		deferred
 		end
 
-	debug_directory: CLI_DEBUG_DIRECTORY
+	codeview_debug_directory: CLI_DEBUG_DIRECTORY
+		deferred
+		end
+
+	pdbchecksum_debug_directory: CLI_DEBUG_DIRECTORY
+		deferred
+		end
+
+	reproducible_debug_directory: CLI_DEBUG_DIRECTORY
 		deferred
 		end
 
@@ -34,7 +42,7 @@ feature -- Access
 		end
 
 note
-	copyright: "Copyright (c) 1984-2023, Eiffel Software"
+	copyright: "Copyright (c) 1984-2024, Eiffel Software"
 	license: "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[

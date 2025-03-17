@@ -908,8 +908,6 @@ feature -- Operations
 
 					if attached {PE_ASSEMBLY_DEF_TABLE_ENTRY} tables [{PE_TABLES}.index_of ({PE_TABLES}.tassemblydef).to_integer_32].table [1] as l_table then
 						l_table.public_key_index := (create {PE_BLOB}.make_with_index (hash_blob (l_buf, l_len.item)))
-					end
-					if attached {PE_ASSEMBLY_DEF_TABLE_ENTRY} tables [{PE_TABLES}.index_of ({PE_TABLES}.tassemblydef).to_integer_32].table [1] as l_table then
 						l_table.flags := l_table.flags | {PE_ASSEMBLY_FLAGS}.publickey
 					end
 					l_core_20_header.flags := l_core_20_header.flags | 8
@@ -1050,7 +1048,7 @@ feature -- Operations
 				end
 				i := i + 1
 			end
-			l_current_rva := l_current_rva + {PE_DOTNET_META_TABLES_HEADER}.size_of.to_natural_32
+			l_current_rva := l_current_rva + l_tables_header.size_of.to_natural_32
 				-- tables header
 			l_current_rva := l_current_rva + (l_n * {PLATFORM}.natural_32_bytes).to_natural_32
 				--table counts

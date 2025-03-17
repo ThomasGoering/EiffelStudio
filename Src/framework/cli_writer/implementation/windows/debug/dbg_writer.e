@@ -13,6 +13,9 @@ class
 
 inherit
 	COM_OBJECT
+		export
+			{DBG_DOCUMENT_WRITER, DBG_WRITER_I} item
+		end
 
 	DBG_WRITER_I
 
@@ -42,7 +45,7 @@ feature {NONE} -- Initialization
 
 feature -- Update
 
-	close
+	close (a_pe_file: detachable CLI_PE_FILE)
 			-- Stop all processing on current.
 		do
 			last_call_success := c_close (item)
@@ -75,9 +78,23 @@ feature -- Update
 			last_call_success := c_close_scope (item, end_offset)
 		end
 
+	open_local_signature (a_doc: DBG_DOCUMENT_WRITER_I; a_token: INTEGER)
+			-- Open Local signature token for the current method token.
+		do
+				-- Not implemented for COM interface.
+			last_call_success := 0
+		end
+
+	close_local_signature (a_doc: DBG_DOCUMENT_WRITER_I)
+			-- Close local signature fo the current Method.
+		do
+				-- Not implemented for COM interface.
+			last_call_success := 0
+		end
+
 feature -- PE file data
 
-	debug_info (a_dbg_directory: CLI_DEBUG_DIRECTORY): MANAGED_POINTER
+	codeview_debug_info (a_dbg_directory: CLI_DEBUG_DIRECTORY): MANAGED_POINTER
 			-- Retrieve debug info required to be inserted in PE file.
 		local
 			l_count: INTEGER
@@ -88,6 +105,13 @@ feature -- PE file data
 
 			create Result.make (l_count)
 			Result.item.memory_copy (l_data.item, l_count)
+		end
+
+	checksum_debug_info (a_dbg_directory: CLI_DEBUG_DIRECTORY): MANAGED_POINTER
+			-- Retrieve checksum info required to be inserted in PE file.
+		do
+				-- Not implemented for COM interface.
+			create Result.make (0)
 		end
 
 feature -- Status report
@@ -107,30 +131,63 @@ feature -- Definition
 			check
 				p_not_null: p /= default_pointer
 			end
-			create {DBG_DOCUMENT_WRITER} Result.make_by_pointer (p)
+			create {DBG_DOCUMENT_WRITER} Result.make (Current, p)
 		end
 
 	define_sequence_points (document: DBG_DOCUMENT_WRITER_I; count: INTEGER; offsets, start_lines,
 			start_columns, end_lines, end_columns: ARRAY [INTEGER])
 			-- Set sequence points for `document'
 		local
-			l_offsets, l_start_lines, l_start_columns, l_end_lines, l_end_columns: ANY
+			j, n: INTEGER_32
 		do
-			if count > 0 then
-				l_offsets := offsets.to_c
-				l_start_lines := start_lines.to_c
-				l_start_columns := start_columns.to_c
-				l_end_lines := end_lines.to_c
-				l_end_columns := end_columns.to_c
-				if attached {DBG_DOCUMENT_WRITER} document as doc then
-					last_call_success := c_define_sequence_points (item, doc.item, count,
-						$l_offsets, $l_start_lines, $l_start_columns, $l_end_lines, $l_end_columns)
+--			debug ("il_emitter_dbg")
+				print (generator + ".define_sequence_points (doc, " + count.out + ", ")
+				if count > 0 then
+					j := 0
+					across
+						<<offsets, start_lines, start_columns, end_lines, end_columns>> as arr
+					loop
+						print (", ")
+						j := j + 1
+						inspect j
+						when 2 then
+							print ("# start_lines")
+						when 3 then
+							print ("# start_columns")
+						when 4 then
+							print ("# end_lines")
+						when 5 then
+							print ("# end_columns")
+						else
+							print ("# ")
+						end
+						print ("[")
+						n := 0
+						across
+							arr as i
+						until
+							n >= count
+						loop
+							print (i.out)
+							n := n + 1
+							if n < count then
+								print (",")
+							end
+						end
+						print ("]")
+					end
 				else
-					check has_expected_document: False end
-					last_call_success := -1 -- FIXME
+					print (",,,,,")
 				end
+				print (")%N")
+--			end;
+
+			document.define_sequence_points (count, offsets, start_lines,
+			start_columns, end_lines, end_columns)
+			if attached {DBG_DOCUMENT_WRITER} document as doc then
+				last_call_success := doc.last_call_success
 			else
-				last_call_success := 0
+				check expected_dbg_document_writer: False end
 			end
 		end
 
@@ -310,7 +367,7 @@ feature {NONE} -- Implementation
 		end
 
 note
-	copyright:	"Copyright (c) 1984-2023, Eiffel Software"
+	copyright:	"Copyright (c) 1984-2024, Eiffel Software"
 	license:	"GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[

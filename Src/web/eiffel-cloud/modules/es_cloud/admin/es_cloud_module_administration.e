@@ -21,6 +21,8 @@ inherit
 
 	CMS_HOOK_RESPONSE_ALTER
 
+	CMS_HOOK_CLEANUP
+
 create
 	make
 
@@ -90,6 +92,7 @@ feature -- Hooks configuration
 			a_hooks.subscribe_to_menu_system_alter_hook (Current)
 			a_hooks.subscribe_to_response_alter_hook (Current)
 			a_hooks.subscribe_to_form_alter_hook (Current)
+			a_hooks.subscribe_to_cleanup_hook (Current)
 		end
 
 	response_alter (a_response: CMS_RESPONSE)
@@ -141,6 +144,8 @@ feature -- Hooks configuration
 			fset, lic_fset: WSF_FORM_FIELD_SET
 			s: STRING
 			l_license: detachable ES_CLOUD_LICENSE
+			l_dt_input: WSF_FORM_NUMBER_INPUT
+			b_input: WSF_FORM_CHECKBOX_INPUT
 		do
 			if
 				attached module.es_cloud_api as l_cloud_api and then
@@ -233,6 +238,29 @@ feature -- Hooks configuration
 --							a_form.validation_actions.extend (agent license_form_validation_action (?, l_user, l_license, l_cloud_api))
 --						end
 					end
+				elseif l_form_id.same_string ({CMS_ADMIN_CLEANUP_HANDLER}.form_admin_cleanup_id) then
+					create fset.make
+					create b_input.make ("cleanup-params[license-archive]")
+					b_input.set_checked (False)
+					b_input.set_title ("Archive expired license?")
+					fset.extend (b_input)
+					create l_dt_input.make ("cleanup-params[license-age-in-days]")
+					l_dt_input.set_label ("Archive license expired and aged (in days) ...")
+					l_dt_input.set_text_value (l_cloud_api.config.license_archive_age.out)
+					l_dt_input.set_description ("Archive licenses expired and older than specified N days")
+					fset.extend (l_dt_input)
+
+					create b_input.make ("cleanup-params[session-archive]")
+					b_input.set_checked (True)
+					b_input.set_title ("Archive old sessions?")
+					fset.extend (b_input)
+
+					create l_dt_input.make ("cleanup-params[session-age-in-days]")
+					l_dt_input.set_label ("Archive sessions aged (in days) ...")
+					l_dt_input.set_text_value (l_cloud_api.config.session_archive_age.out)
+					l_dt_input.set_description ("Archive sessions older than specified N days")
+					fset.extend (l_dt_input)
+					a_form.extend (fset)
 				end
 			end
 		end
@@ -423,113 +451,119 @@ feature -- Hooks configuration
 				lic_fset.extend_html_text (s)
 			end
 
-			create l_select.make (l_var_prefix + "[plan]")
-			l_select.set_label ("Plan")
-			lic_fset.extend (l_select)
-			across
-				a_cloud_api.plans as pl_ic
-			loop
-				create l_select_opt.make (pl_ic.item.name, pl_ic.item.title_or_name)
-				if l_plan /= Void and then pl_ic.item.same_plan (l_plan) then
-					l_select_opt.set_is_selected (True)
+			if a_license /= Void and then a_license.is_archived then
+				create s.make_empty
+				s.append ("<div class=%"es-license%"><span class=%"warning%">This license is ARCHIVED</span></p>")
+				lic_fset.extend_html_text (s)
+			else
+				create l_select.make (l_var_prefix + "[plan]")
+				l_select.set_label ("Plan")
+				lic_fset.extend (l_select)
+				across
+					a_cloud_api.plans as pl_ic
+				loop
+					create l_select_opt.make (pl_ic.item.name, pl_ic.item.title_or_name)
+					if l_plan /= Void and then pl_ic.item.same_plan (l_plan) then
+						l_select_opt.set_is_selected (True)
+					end
+					l_select.add_option (l_select_opt)
 				end
-				l_select.add_option (l_select_opt)
-			end
---			across
---				a_cloud_api.plans as pl_ic
---			loop
---				create r.make_with_value (l_var_prefix + "[plan]", pl_ic.item.name.as_string_32)
---				r.set_title (pl_ic.item.title_or_name)
---				if l_plan /= Void and then pl_ic.item.same_plan (l_plan) then
---					r.set_checked (True)
---				end
---				lic_fset.extend (r)
---			end
+	--			across
+	--				a_cloud_api.plans as pl_ic
+	--			loop
+	--				create r.make_with_value (l_var_prefix + "[plan]", pl_ic.item.name.as_string_32)
+	--				r.set_title (pl_ic.item.title_or_name)
+	--				if l_plan /= Void and then pl_ic.item.same_plan (l_plan) then
+	--					r.set_checked (True)
+	--				end
+	--				lic_fset.extend (r)
+	--			end
 
-			create txt.make (l_var_prefix + "[platforms]")
-			txt.set_label ("Platforms")
-			txt.set_description ("License for specific platforms (comma separated value)")
-			if a_license /= Void and then attached a_license.platforms_as_csv_string as pf then
-				txt.set_text_value (pf)
-			end
-			lic_fset.extend (txt)
-			create txt.make (l_var_prefix + "[version]")
-			txt.set_label ("Version")
-			txt.set_description ("License for specific version")
-			if a_license /= Void and then attached a_license.version as pv then
-				txt.set_text_value (pv)
-			end
-			lic_fset.extend (txt)
+				create txt.make (l_var_prefix + "[platforms]")
+				txt.set_label ("Platforms")
+				txt.set_description ("License for specific platforms (comma separated value)")
+				if a_license /= Void and then attached a_license.platforms_as_csv_string as pf then
+					txt.set_text_value (pf)
+				end
+				lic_fset.extend (txt)
+				create txt.make (l_var_prefix + "[version]")
+				txt.set_label ("Version")
+				txt.set_description ("License for specific version")
+				if a_license /= Void and then attached a_license.version as pv then
+					txt.set_text_value (pv)
+				end
+				lic_fset.extend (txt)
 
-			create num.make (l_var_prefix + "[duration-in-month]")
-			num.set_min (0)
-			num.set_max (5*12)
-			num.set_step (0.5)
-			num.set_label ("Additional time")
-			num.set_size (8)
-			num.set_description ("number of additional months.")
-			lic_fset.extend (num)
+				create num.make (l_var_prefix + "[duration-in-month]")
+				num.set_min (0)
+				num.set_max (5*12)
+				num.set_step (0.5)
+				num.set_label ("Additional time")
+				num.set_size (8)
+				num.set_description ("number of additional months.")
+				lic_fset.extend (num)
 
 
-			create exp.make (l_var_prefix + "[expiration]")
-			exp.set_label ("Expiration date")
-			exp.set_description ("Expiration date")
-			if a_license /= Void and then attached a_license.expiration_date as l_exp_date then
-				exp.set_description ("Current expiration date: " + l_exp_date.out + "%N")
-			end
-			lic_fset.extend (exp)
+				create exp.make (l_var_prefix + "[expiration]")
+				exp.set_label ("Expiration date")
+				exp.set_description ("Expiration date")
+				if a_license /= Void and then attached a_license.expiration_date as l_exp_date then
+					exp.set_description ("Current expiration date: " + l_exp_date.out + "%N")
+				end
+				lic_fset.extend (exp)
 
-			lic_fset.extend_html_text ("<br/>")
+				lic_fset.extend_html_text ("<br/>")
 
-			create h.make
-			h.add_css_class ("horizontal")
-			lic_fset.extend (h)
-			if a_license /= Void then
-				lic_fset.extend (create {WSF_FORM_HIDDEN_INPUT}.make_with_text ("es-lic-lid", a_license.id.out))
-				if a_license.is_suspended then
-					create l_submit.make_with_text ("es-lic-op-resume", "Resume License")
-					h.extend (l_submit)
-				else
-					create l_submit.make_with_text ("es-lic-op", "Save License #" + a_license.id.out)
-					h.extend (l_submit)
+				create h.make
+				h.add_css_class ("horizontal")
+				lic_fset.extend (h)
+				if a_license /= Void then
+					lic_fset.extend (create {WSF_FORM_HIDDEN_INPUT}.make_with_text ("es-lic-lid", a_license.id.out))
+					if a_license.is_suspended then
+						create l_submit.make_with_text ("es-lic-op-resume", "Resume License")
+						h.extend (l_submit)
+					else
+						create l_submit.make_with_text ("es-lic-op", "Save License #" + a_license.id.out)
+						h.extend (l_submit)
 
-					if a_license.expiration_date /= Void then
-						create l_submit.make_with_text ("es-lic-op-no-exp-date", "Remove Expiration Date")
+						if a_license.expiration_date /= Void then
+							create l_submit.make_with_text ("es-lic-op-no-exp-date", "Remove Expiration Date")
+							h.extend (l_submit)
+						end
+
+						create l_submit.make_with_text ("es-lic-op-suspend", "Suspend License")
 						h.extend (l_submit)
 					end
-
-					create l_submit.make_with_text ("es-lic-op-suspend", "Suspend License")
-					h.extend (l_submit)
-				end
-				if a_license.is_fallback then
-					create h.make
-					h.add_css_class ("horizontal")
-					h.add_css_class ("fallback")
-					lic_fset.extend (h)
-					create l_submit.make_with_text ("es-lic-op-undo-fallback", "Undo FallBack")
-					h.extend (l_submit)
-				elseif
-					a_license.may_be_eligible_to_fallback
-				then
-					create h.make
-					h.add_css_class ("horizontal")
-					h.add_css_class ("may-fallback")
-					lic_fset.extend (h)
-					if attached a_license.version as v then
-						h.extend (create {WSF_FORM_TEXT_INPUT}.make_with_text ("es-lic-version", v))
-					else
-						if attached a_license.version as pv then
-							h.extend (create {WSF_FORM_TEXT_INPUT}.make_with_text ("es-lic-version", pv))
+					if a_license.is_fallback then
+						create h.make
+						h.add_css_class ("horizontal")
+						h.add_css_class ("fallback")
+						lic_fset.extend (h)
+						create l_submit.make_with_text ("es-lic-op-undo-fallback", "Undo FallBack")
+						h.extend (l_submit)
+					elseif
+						a_license.may_be_eligible_to_fallback
+					then
+						create h.make
+						h.add_css_class ("horizontal")
+						h.add_css_class ("may-fallback")
+						lic_fset.extend (h)
+						if attached a_license.version as v then
+							h.extend (create {WSF_FORM_TEXT_INPUT}.make_with_text ("es-lic-version", v))
 						else
-							h.extend (create {WSF_FORM_TEXT_INPUT}.make_with_text ("es-lic-version", "Enter a valid version!!!"))
+							if attached a_license.version as pv then
+								h.extend (create {WSF_FORM_TEXT_INPUT}.make_with_text ("es-lic-version", pv))
+							else
+								h.extend (create {WSF_FORM_TEXT_INPUT}.make_with_text ("es-lic-version", "Enter a valid version!!!"))
+							end
 						end
+						create l_submit.make_with_text ("es-lic-op-fallback", "Make FallBack")
+						h.extend (l_submit)
 					end
-					create l_submit.make_with_text ("es-lic-op-fallback", "Make FallBack")
+				else
+					create l_submit.make_with_text ("es-lic-op", "Save License")
 					h.extend (l_submit)
 				end
-			else
-				create l_submit.make_with_text ("es-lic-op", "Save License")
-				h.extend (l_submit)
 			end
 		end
 
@@ -555,6 +589,41 @@ feature -- Hooks configuration
 				j := s.index_of ('-', i + 1)
 				if j > 0 then
 					create Result.make (s.substring (1, i - 1).to_integer, s.substring (i + 1, j - 1).to_integer, s.substring (j + 1, s.count).to_integer)
+				end
+			end
+		end
+
+feature -- Hook	
+
+	cleanup (ctx: CMS_HOOK_CLEANUP_CONTEXT; a_response: CMS_RESPONSE)
+			-- Cleanup
+		local
+			dt: DATE_TIME
+			cl: CELL [INTEGER]
+		do
+			if attached module.es_cloud_api as l_es_cloud_api then
+				ctx.log ("Cleanup ES Cloud")
+				if attached ctx.parameter ("license-archive") as s and then s.same_string ("on") then
+					ctx.log ("Archive expired licenses")
+					create dt.make_now_utc
+					if attached ctx.parameter ("license-age-in-days") as s_days and then s_days.is_integer_32 then
+						dt.day_add (- s_days.to_integer_32)
+					else
+						dt.day_add (-1 * l_es_cloud_api.config.license_archive_age)
+					end
+					create cl.put (0)
+					l_es_cloud_api.cleanup_licenses (dt, cl)
+					ctx.log ("Archived " + cl.item.out + " licenses")
+				end
+				if attached ctx.parameter ("session-archive") as s and then s.same_string ("on") then
+					ctx.log ("Archive old sessions")
+					create dt.make_now_utc
+					if attached ctx.parameter ("session-age-in-days") as s_days and then s_days.is_integer_32 then
+						dt.day_add (- s_days.to_integer_32)
+					else
+						dt.day_add (-1 * l_es_cloud_api.config.session_archive_age)
+					end
+					l_es_cloud_api.cleanup_sessions (dt)
 				end
 			end
 		end

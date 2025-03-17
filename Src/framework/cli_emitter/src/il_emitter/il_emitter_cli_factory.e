@@ -14,9 +14,19 @@ inherit
 
 feature -- Access
 
-	debug_directory: CLI_DEBUG_DIRECTORY
+	codeview_debug_directory: CLI_DEBUG_DIRECTORY
 		do
-			create {IL_EMITTER_CLI_DEBUG_DIRECTORY} Result.make
+			create {IL_EMITTER_CLI_DEBUG_DIRECTORY} Result.make_codeview
+		end
+
+	pdbchecksum_debug_directory: CLI_DEBUG_DIRECTORY
+		do
+			create {IL_EMITTER_CLI_DEBUG_DIRECTORY} Result.make_pdbchecksum
+		end
+
+	reproducible_debug_directory: CLI_DEBUG_DIRECTORY
+		do
+			create {IL_EMITTER_CLI_DEBUG_DIRECTORY} Result.make_reproducible
 		end
 
 	pe_file (a_name: READABLE_STRING_32; console_app, dll_app, is_32bits_app: BOOLEAN; e: MD_EMIT): IL_EMITTER_CLI_PE_FILE
@@ -31,11 +41,6 @@ feature -- Access
 
 	dbg_writer (emitter: MD_EMIT; name: CLI_STRING; full_build: BOOLEAN): DBG_WRITER
 		do
-			debug ("refactor_fixme")
-				to_implement ("TODO: DBG_WRITER")
-			end
-			check not_yet_implemented: False end
-
 			create {IL_EMITTER_DBG_WRITER} Result.make (emitter, name, full_build)
 		end
 
@@ -50,7 +55,7 @@ feature -- Access
 		end
 
 note
-	copyright: "Copyright (c) 1984-2023, Eiffel Software"
+	copyright: "Copyright (c) 1984-2024, Eiffel Software"
 	license: "GPL version 2 (see http://www.eiffel.com/licensing/gpl.txt)"
 	licensing_options: "http://www.eiffel.com/licensing"
 	copying: "[

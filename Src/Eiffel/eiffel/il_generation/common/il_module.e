@@ -101,7 +101,7 @@ feature {NONE} -- Initialization
 			a_module_id_non_negative: a_module_id > 0
 		local
 			i: INTEGER
-			f_ext, ext: READABLE_STRING_32
+			f_ext, ext: READABLE_STRING_8
 		do
 			debug ("il_emitter_table")
 				print ({STRING_32} "IL_MODULE: " + a_module_name_with_extension + "%N")
@@ -109,7 +109,7 @@ feature {NONE} -- Initialization
 
 			i := a_file_name.last_index_of ('.', a_file_name.count)
 			if i > 0 then
-				f_ext := a_file_name.substring (i + 1, a_file_name.count)
+				f_ext := a_file_name.substring (i + 1, a_file_name.count).to_string_8 -- Unicode extension string is not expected
 			else
 				check module_file_name_has_extension: False end
 				f_ext := "dll" -- Default
@@ -117,7 +117,7 @@ feature {NONE} -- Initialization
 
 			i := a_module_name_with_extension.last_index_of ('.', a_module_name_with_extension.count)
 			if i > 0 then
-				ext := a_module_name_with_extension.substring (i + 1, a_module_name_with_extension.count)
+				ext := a_module_name_with_extension.substring (i + 1, a_module_name_with_extension.count).to_string_8 -- Unicode extension string is not expected
 				if ext.is_case_insensitive_equal ("exe") or ext.is_case_insensitive_equal ("dll") then
 					module_name_with_extension := a_module_name_with_extension
 					module_name := a_module_name_with_extension.substring (1, i - 1)
@@ -1127,7 +1127,7 @@ feature -- Cleanup
 			internal_dbg_documents := Void
 			internal_dbg_pragma_documents := Void
 			if attached dbg_writer as l_dbg_writer and then not dbg_writer.is_closed then
-				dbg_writer.close
+				dbg_writer.close (Void)
 			end
 			dbg_writer := Void
 		end
@@ -1267,7 +1267,7 @@ feature -- Code generation
 						rt_v := "6.0" -- Hardcoded value!!!
 					end
 					create ca.make
-					ca.put_string (".NETCoreApp,Version=v" + rt_v)
+					ca.put_string (".NETCoreApp,Version=v" + {UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (rt_v))
 					ca.put_integer_16 (0)
 
 -- The "FrameworkDisplayName" is not required
@@ -1471,16 +1471,31 @@ feature -- Code generation
 			a_signing_not_void: public_key /= Void implies a_signing /= Void
 		local
 			l_pe_file: CLI_PE_FILE
-			l_debug_info: MANAGED_POINTER
 			ept: like entry_point_token
 			loc: PATH
+			l_codeview_debug_info,
+			l_checksum_debug_info: MANAGED_POINTER
+			l_checksum_dbg_directory,
+			l_reproducible_dbg_directory: CLI_DEBUG_DIRECTORY
 		do
 			l_pe_file := md_factory.pe_file (module_file_name, is_dll or is_console_application, is_dll, is_32bits, md_emit)
 			if is_debug_info_enabled then
-				if attached md_factory.debug_directory as l_dbg_directory then
-					l_debug_info := dbg_writer.debug_info (l_dbg_directory)
-					l_pe_file.set_debug_information (l_dbg_directory, l_debug_info)
-					dbg_writer.close
+				if attached md_factory.codeview_debug_directory as l_codeview_dbg_directory then
+					l_codeview_debug_info := dbg_writer.codeview_debug_info (l_codeview_dbg_directory)
+					l_pe_file.set_codeview_debug_information (l_codeview_dbg_directory, l_codeview_debug_info)
+
+					l_checksum_dbg_directory := md_factory.pdbchecksum_debug_directory
+					if l_checksum_dbg_directory /= Void then
+						l_checksum_debug_info := dbg_writer.checksum_debug_info (l_checksum_dbg_directory)
+						l_pe_file.set_checksum_debug_information (l_checksum_dbg_directory, l_checksum_debug_info)
+					end
+
+					l_reproducible_dbg_directory := md_factory.reproducible_debug_directory
+					if l_reproducible_dbg_directory /= Void then
+						l_pe_file.set_reproducible_debug_information (l_reproducible_dbg_directory)
+					end
+
+					dbg_writer.close (l_pe_file)
 				else
 					check implemented: False end
 				end
@@ -2888,7 +2903,10 @@ feature -- Mapping between Eiffel compiler and generated tokens
 			in_debug_mode: is_debug_info_enabled
 		do
 			Result := internal_dbg_documents.item (a_class_id)
-			if Result = Void and then attached system.class_of_id (a_class_id) as l_class then
+			if
+				Result = Void and then
+				attached system.class_of_id (a_class_id) as l_class
+			then
 				Result := dbg_writer.define_document (uni_string (l_class.file_name), language_guid,
 					vendor_guid, document_type_guid)
 				internal_dbg_documents.put (Result, a_class_id)
@@ -4067,19 +4085,19 @@ note
 	licensing_options:	"http://www.eiffel.com/licensing"
 	copying: "[
 			This file is part of Eiffel Software's Eiffel Development Environment.
-
+			
 			Eiffel Software's Eiffel Development Environment is free
 			software; you can redistribute it and/or modify it under
 			the terms of the GNU General Public License as published
 			by the Free Software Foundation, version 2 of the License
 			(available at the URL listed under "license" above).
-
+			
 			Eiffel Software's Eiffel Development Environment is
 			distributed in the hope that it will be useful, but
 			WITHOUT ANY WARRANTY; without even the implied warranty
 			of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 			See the GNU General Public License for more details.
-
+			
 			You should have received a copy of the GNU General Public
 			License along with Eiffel Software's Eiffel Development
 			Environment; if not, write to the Free Software Foundation,

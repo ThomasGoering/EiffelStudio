@@ -24,6 +24,10 @@ inherit
 
 	CMS_HOOK_FORM_ALTER
 
+	CMS_HOOK_CLEANUP
+
+	CMS_WITH_MODULE_ADMINISTRATION
+
 create
 	make
 
@@ -86,6 +90,14 @@ feature {CMS_EXECUTION} -- Administration
 			create Result.make (Current)
 		end
 
+feature {NONE} -- Administration
+
+	administration: CMS_SELF_MODULE_ADMINISTRATION [JWT_AUTH_MODULE]
+			-- Administration module.
+		do
+			create Result.make (Current)
+		end
+
 feature {CMS_API, CMS_MODULE_API, CMS_MODULE} -- Access: API
 
 	jwt_auth_api: detachable JWT_AUTH_API
@@ -100,7 +112,7 @@ feature -- Access: router
 				a_router.handle ("/user/{uid}/jwt_access_token", create {JWT_AUTH_TOKEN_USER_HANDLER}.make (l_jwt_auth_api), a_router.methods_get_post)
 				a_router.handle ("/user/{uid}/magic-login/{token}", create {JWT_AUTH_MAGIC_LOGIN_HANDLER}.make (l_jwt_auth_api), a_router.methods_get)
 
-				a_router.handle ("/auth/client-sign-in/{challenge}", create {JWT_AUTH_SIGN_IN_HANDLER}.make (l_jwt_auth_api), a_router.methods_get_post)
+				a_router.handle ("/auth/client-sign-in/{challenge}", create {JWT_AUTH_SIGN_IN_HANDLER}.make (l_jwt_auth_api, Current), a_router.methods_get_post)
 			end
 		end
 
@@ -119,9 +131,25 @@ feature -- Hooks configuration
 			-- Module hooks configuration.
 		do
 			a_hooks.subscribe_to_form_alter_hook (Current)
+			a_hooks.subscribe_to_cleanup_hook (Current)
 		end
 
 feature -- Hook
+
+	cleanup (ctx: CMS_HOOK_CLEANUP_CONTEXT; a_response: CMS_RESPONSE)
+			-- Process cron event
+		local
+			dt: DATE_TIME
+			cl: CELL [INTEGER]
+		do
+			if attached jwt_auth_api as l_api then
+				ctx.log ("Cleanup expired JWT Auth tokens.")
+				create dt.make_now_utc
+				create cl.put (0)
+				l_api.discard_expired_tokens (dt, cl)
+				ctx.log (cl.item.out + " were discarded.")
+			end
+		end
 
 	form_alter (a_form: CMS_FORM; a_form_data: detachable WSF_FORM_DATA; a_response: CMS_RESPONSE)
 			-- Hook execution on form `a_form' and its associated data `a_form_data',

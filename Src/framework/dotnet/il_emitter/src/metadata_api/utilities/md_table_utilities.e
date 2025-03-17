@@ -63,6 +63,47 @@ feature -- Saving preparation
 			end
 		end
 
+	prepare_pdb_to_save
+			-- Prepare pdb data to be save
+		do
+			debug ("il_emitter_table_map")
+				if attached associated_filename as fn then
+					print ("%N")
+					print ("Prepare ")
+					print (fn)
+					print ("%N")
+				end
+				{MD_DBG_CHRONO}.start ("ensure_list_indexes_are_ordered")
+			end
+			ensure_pdb_list_indexes_are_ordered
+			debug ("il_emitter_table_map")
+				{MD_DBG_CHRONO}.stop ("ensure_list_indexes_are_ordered")
+				{MD_DBG_CHRONO}.start ("update_index_list_in_tables")
+			end
+				-- Update all uninitialized PE_LIST (FieldList, MethodList, ParamList, ...)
+			update_index_list_in_pdb_tables
+			debug ("il_emitter_table_map")
+				{MD_DBG_CHRONO}.stop ("update_index_list_in_tables")
+				{MD_DBG_CHRONO}.start ("ensure_expected_tables_are_sorted")
+			end
+				-- Sort tables...
+			ensure_pdb_expected_tables_are_sorted
+			debug ("il_emitter_table_map")
+				{MD_DBG_CHRONO}.stop ("ensure_expected_tables_are_sorted")
+				if attached associated_filename as fn then
+					print ("-> File: ")
+					print (fn)
+					print ("%N")
+				end
+				print ({MD_DBG_CHRONO}.report_line ("ensure_list_indexes_are_ordered"))
+				print ({MD_DBG_CHRONO}.report_line ("update_index_list_in_tables"))
+				print ({MD_DBG_CHRONO}.report_line ("ensure_expected_pdb_tables_are_sorted"))
+				{MD_DBG_CHRONO}.remove ("ensure_list_indexes_are_ordered")
+				{MD_DBG_CHRONO}.remove ("update_index_list_in_tables")
+				{MD_DBG_CHRONO}.remove ("ensure_expected_tables_are_sorted")
+			end
+		end
+
 feature -- Access
 
 	associated_filename: detachable READABLE_STRING_GENERAL
@@ -71,7 +112,13 @@ feature -- Access
 
 	md_table (idx: NATURAL_32): detachable MD_TABLE
 		do
-			Result := emitter.md_table (idx)
+			Result := emitter.pe_writer.md_table (idx)
+		end
+
+	pdb_md_table (idx: NATURAL_32): detachable MD_TABLE
+		do
+			check {PDB_TABLES}.tdocument <= idx and idx <= {PDB_TABLES}.tcustomdebuginformation end
+			Result := emitter.pdb_writer.md_table (idx)
 		end
 
 	typedef_table: detachable MD_TABLE
@@ -94,12 +141,25 @@ feature -- Access
 			Result := md_table ({PE_TABLES}.tparam)
 		end
 
-feature -- Update missing indexes
+	local_scope_table: detachable MD_TABLE
+		do
+			Result := pdb_md_table ({PDB_TABLES}.tlocalscope)
+		end
+
+	local_variable_table: detachable MD_TABLE
+		do
+			Result := pdb_md_table ({PDB_TABLES}.tlocalvariable)
+		end
+
+feature -- Update missing PE indexes
 
 	update_index_list_in_tables
 		do
 				-- Update all uninitialized PE_LIST (FieldList, MethodList, ParamList, ...)
-			if attached typedef_table as l_typedef_tb then
+			if
+				attached typedef_table as l_typedef_tb and then
+				not l_typedef_tb.is_empty
+			then
 				if attached field_table as l_field_tb then
 					update_field_list_of_typedef_table (l_typedef_tb, l_field_tb)
 				end
@@ -109,6 +169,7 @@ feature -- Update missing indexes
 			end
 			if
 				attached methoddef_table as l_methoddef_tb and then
+				not l_methoddef_tb.is_empty and then
 				attached param_table as l_param_tb
 			then
 				update_param_list_of_methoddef_table (l_methoddef_tb, l_param_tb)
@@ -134,7 +195,7 @@ feature -- Update missing indexes
 							across
 								l_missing_field_index_entries as m
 							loop
-								m.fields.update_missing_index (l_type_def_entry.fields.index)
+								m.fields.update_missing_index (field_idx)
 							end
 							l_missing_field_index_entries.wipe_out
 						end
@@ -177,7 +238,7 @@ feature -- Update missing indexes
 							across
 								l_missing_method_index_entries as m
 							loop
-								m.methods.update_missing_index (l_type_def_entry.methods.index)
+								m.methods.update_missing_index (method_idx)
 							end
 							l_missing_method_index_entries.wipe_out
 						end
@@ -220,7 +281,7 @@ feature -- Update missing indexes
 							across
 								l_missing_param_index_entries as m
 							loop
-								m.param_index.update_missing_index (l_method_def_entry.param_index.index)
+								m.param_index.update_missing_index (param_idx)
 							end
 							l_missing_param_index_entries.wipe_out
 						end
@@ -241,6 +302,66 @@ feature -- Update missing indexes
 					t.param_index.update_missing_index (max_param_idx)
 				end
 				l_missing_param_index_entries := Void
+			end
+		end
+
+feature -- Update missing PDB indexes		
+
+	update_index_list_in_pdb_tables
+		do
+			if
+				attached local_scope_table as l_localscope_tb and then
+				not l_localscope_tb.is_empty and then
+				attached local_variable_table as l_localvariable_tb
+			then
+-- FOR NOW, not NEEDED:
+--				update_local_variable_list_of_local_scope_table (l_localscope_tb, l_localvariable_tb)
+			end
+		end
+
+	update_local_variable_list_of_local_scope_table (a_localscope_tb, a_localvariable_table: MD_TABLE)
+		local
+			max_localvar_idx: NATURAL_32
+			vars_idx: NATURAL_32
+			l_missing_localvar_index_entries: ARRAYED_LIST [PE_LOCAL_SCOPE_TABLE_ENTRY]
+		do
+			max_localvar_idx := a_localvariable_table.next_index
+				-- LocalScope table
+			across
+				a_localscope_tb as e
+			loop
+				if attached {PE_LOCAL_SCOPE_TABLE_ENTRY} e as l_local_scope_entry then
+						-- VariableList
+					if l_local_scope_entry.is_variable_list_index_set then
+						vars_idx := l_local_scope_entry.variable_list_index.index
+						if
+							l_missing_localvar_index_entries /= Void and then
+							not l_missing_localvar_index_entries.is_empty
+						then
+							across
+								l_missing_localvar_index_entries as m
+							loop
+								m.variable_list_index.update_missing_index (vars_idx)
+							end
+							l_missing_localvar_index_entries.wipe_out
+						end
+					else
+						if l_missing_localvar_index_entries = Void then
+							create l_missing_localvar_index_entries.make (10)
+						end
+						l_missing_localvar_index_entries.force (l_local_scope_entry)
+					end
+				else
+					check is_local_scope_entry: False end
+				end
+			end
+			if l_missing_localvar_index_entries /= Void then
+				across
+					l_missing_localvar_index_entries as t
+				loop
+					t.variable_list_index.update_missing_index (max_localvar_idx)
+				end
+				l_missing_localvar_index_entries := Void
 			end
 		end
 
@@ -298,6 +419,15 @@ feature -- Table sorting
 --			ensure_table_is_sorted ({PE_TABLES}.tnestedclass)
 		end
 
+	ensure_pdb_expected_tables_are_sorted
+			-- Ensure pdb tables that should be sorted are sorted.
+			-- See https://github.com/dotnet/runtime/blob/main/docs/design/specs/PortablePdb-Metadata.md
+		do
+			-- LocalScope table
+			-- ImportScope table
+			ensure_pdb_table_is_sorted ({PDB_TABLES}.tlocalscope)
+		end
+
 	ensure_table_is_sorted (tb_id: NATURAL_32)
 			-- Ensure table associated with `tb_id` is sorted.
 		do
@@ -314,6 +444,24 @@ feature -- Table sorting
 				check tb.is_sorted (l_sorter) end
 			end
 		end
+
+	ensure_pdb_table_is_sorted (tb_id: NATURAL_32)
+			-- Ensure table associated with `tb_id` is sorted.
+		do
+			if
+				attached pdb_md_table (tb_id) as tb and then
+				attached pdb_table_sorter (tb_id) as l_sorter
+			then
+				debug ("il_emitter")
+					if not tb.is_sorted (l_sorter) then
+						print ("Table ["+ tb_id.to_natural_8.to_hex_string +"] is NOT sorted%N")
+					end
+				end
+				tb.sort (l_sorter)
+				check tb.is_sorted (l_sorter) end
+			end
+		end
+
 
 	table_sorter (tb_id: NATURAL_32): detachable QUICK_SORTER [PE_TABLE_ENTRY_BASE]
 			-- Sorter for table associated with `tb_id`.
@@ -369,6 +517,31 @@ feature -- Table sorting
 			end
 		end
 
+
+	pdb_table_sorter (tb_id: NATURAL_32): detachable QUICK_SORTER [PE_TABLE_ENTRY_BASE]
+			-- Sorter for table associated with `tb_id`.
+		local
+			l_comparator: AGENT_EQUALITY_TESTER [PE_TABLE_ENTRY_BASE]
+		do
+			inspect tb_id
+			when {PDB_TABLES}.tlocalscope then
+				create l_comparator.make (agent (e1, e2: PE_TABLE_ENTRY_BASE): BOOLEAN
+					do
+						if
+							attached {PE_LOCAL_SCOPE_TABLE_ENTRY} e1 as o1 and then
+							attached {PE_LOCAL_SCOPE_TABLE_ENTRY} e2 as o2
+						then
+							Result := o1.less_than (o2)
+						end
+					end)
+			else
+				-- Not implemented or not needed
+			end
+			if l_comparator /= Void then
+				create Result.make (l_comparator)
+			end
+		end
+
 feature -- Operation: List indexes sorting
 
 	is_using_additional_pointer_tables: BOOLEAN = True
@@ -411,6 +584,12 @@ feature -- Operation: List indexes sorting
 					-- Ensure ParamList column is ordered in MethodDef
 				ensure_param_list_column_is_ordered (False)
 			end
+		end
+
+	ensure_pdb_list_indexes_are_ordered
+		do
+				-- Not sure if it's really needed
+			{REFACTORING_HELPER}.to_implement ("To implement")
 		end
 
 feature -- Operation: List indexes sorting using additional FieldPointer and MethodPointer tables
@@ -635,6 +814,8 @@ feature -- Operation: List indexes sorting
 				end
 			end
 		end
+
+
 
 feature -- Column sorting
 

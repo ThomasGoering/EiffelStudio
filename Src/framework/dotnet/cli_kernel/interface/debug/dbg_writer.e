@@ -10,7 +10,7 @@ deferred class
 
 feature -- Update
 
-	close
+	close (a_pe_file: detachable CLI_PE_FILE)
 			-- Stop all processing on current.
 		require
 			not_is_closed: not is_closed
@@ -57,12 +57,40 @@ feature -- Update
 			is_successful
 		end
 
-feature -- PE file data
-
-	debug_info (a_dbg_directory: CLI_DEBUG_DIRECTORY): MANAGED_POINTER
-			-- Retrieve debug info required to be inserted in PE file.
+	open_local_signature (a_doc: DBG_DOCUMENT_WRITER; a_token: INTEGER)
+			-- Open Local signature token for the current method token.
 		require
 			not_is_closed: not is_closed
+			valid_token: a_token >= 0
+		deferred
+		ensure
+			is_successful
+		end
+
+	close_local_signature (a_doc: DBG_DOCUMENT_WRITER)
+			-- Close local signature fo the current Method.
+		require
+			not_is_closed: not is_closed
+		deferred
+		ensure
+			is_successful
+		end
+
+feature -- PE file data
+
+	codeview_debug_info (a_dbg_directory: CLI_DEBUG_DIRECTORY): MANAGED_POINTER
+			-- Retrieve CodeView debug info required to be inserted in PE file.
+		require
+			not_is_closed: not is_closed
+			a_dbg_directory_not_void: a_dbg_directory /= Void
+		deferred
+		ensure
+			is_successful
+		end
+
+	checksum_debug_info (a_dbg_directory: CLI_DEBUG_DIRECTORY): MANAGED_POINTER
+			-- Retrieve PdbChecksum debug info required to be inserted in PE file.
+		require
 			a_dbg_directory_not_void: a_dbg_directory /= Void
 		deferred
 		ensure

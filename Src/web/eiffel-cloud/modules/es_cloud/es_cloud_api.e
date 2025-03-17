@@ -53,6 +53,12 @@ feature {NONE} -- Initialization
 				if attached cfg.resolved_text_item ("session.expiration_delay") as s then
 					config.session_expiration_delay := s.to_integer
 				end
+				if attached cfg.resolved_text_item ("session.archive_age") as s then
+					config.session_archive_age := s.to_integer
+				end
+				if attached cfg.resolved_text_item ("license.archive_age") as s then
+					config.license_archive_age := s.to_integer
+				end
 				if
 					attached cfg.resolved_text_item ("license.auto_trial") as s and then
 					s.is_case_insensitive_equal_general ("yes")
@@ -673,6 +679,42 @@ feature -- Element change license
 					notify_new_license (l_cms_user, l_cms_user.profile_name, l_email, Result, Void)
 				end
 			end
+		end
+
+	cleanup_licenses (dt: DATE_TIME; a_archived_count: detachable CELL [INTEGER])
+		local
+			lic: ES_CLOUD_LICENSE
+			nb: INTEGER
+		do
+			if
+				attached trial_plan as pl and then
+				attached es_cloud_storage.licenses_for_plan (pl) as lst
+			then
+				across
+					lst as ic
+				loop
+					lic := ic.item.license
+					if lic.is_expired then
+						if
+							attached lic.expiration_date as exp and then
+							exp < dt
+						then
+							nb := nb + 1
+							archive_license (lic)
+						end
+					end
+				end
+				if a_archived_count /= Void then
+					a_archived_count.replace (nb)
+				end
+			end
+		end
+
+	archive_license (lic: ES_CLOUD_LICENSE)
+		require
+			lic.has_id
+		do
+			es_cloud_storage.archive_license (lic)
 		end
 
 feature -- Emailing
@@ -1349,6 +1391,11 @@ feature -- Access: subscriptions
 					end
 				)
 			create {QUICK_SORTER [ES_CLOUD_SESSION]} Result.make (comp)
+		end
+
+	cleanup_sessions (dt: DATE_TIME)
+		do
+			es_cloud_storage.cleanup_sessions (dt)
 		end
 
 feature -- Change	

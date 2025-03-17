@@ -8,6 +8,12 @@ note
 class
 	CMS_EXPORT_CONTEXT
 
+inherit
+	CMS_HOOK_CONTEXT_WITH_LOG
+		rename
+			make as make_context
+		end
+
 create
 	make
 
@@ -16,7 +22,7 @@ feature {NONE} -- Initialization
 	make (a_location: PATH)
 		do
 			location := a_location
-			create logs.make (10)
+			make_context
 		end
 
 feature -- Access
@@ -24,20 +30,9 @@ feature -- Access
 	location: PATH
 			-- Location of export folder.		
 
-feature -- Logs
-
-	logs: ARRAYED_LIST [READABLE_STRING_8]
-			-- Associated exportation logs.
-
-	log (m: READABLE_STRING_8)
-			-- Add message `m' into `logs'.
-		do
-			logs.force (m)
-		end
-
 invariant
 
 note
-	copyright: "2011-2015, Jocelyn Fiat, Javier Velilla, Eiffel Software and others"
+	copyright: "2011-2024, Jocelyn Fiat, Javier Velilla, Eiffel Software and others"
 	license: "Eiffel Forum License v2 (see http://www.eiffel.com/licensing/forum.txt)"
 end

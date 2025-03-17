@@ -274,6 +274,8 @@ feature -- Mode selection
 				b.disable_item_expand (hb)
 			end
 
+			alternative_login_box := hb
+
 			fr.wipe_out
 			fr.extend (b)
 			b.show
@@ -309,6 +311,7 @@ feature -- Mode selection
 				vb_off.extend (l_box)
 				vb_off.disable_item_expand (l_box)
 			end
+			alternative_login_box := Void
 
 			fr.extend (vb_off)
 			fr.propagate_background_color
@@ -348,6 +351,8 @@ feature -- Mode selection
 			vb.extend (l_inner)
 			vb.extend (create {EV_CELL})
 
+			alternative_login_box := Void
+
 			if attached new_credential_sign_in_link (fr) as l_box then
 				create hb
 				vb.extend (hb)
@@ -357,6 +362,7 @@ feature -- Mode selection
 				hb.extend (l_box)
 				hb.disable_item_expand (l_box)
 				hb.extend (create {EV_LABEL})
+				alternative_login_box := hb
 			end
 
 			fr.wipe_out
@@ -370,7 +376,6 @@ feature -- Mode selection
 			lnk: like new_link_label
 			lab: EV_LABEL
 			hb: EV_HORIZONTAL_BOX
-			t: EV_TIMEOUT
 			sep: EV_WIDGET
 		do
 			if
@@ -430,10 +435,12 @@ feature -- Mode selection
 				hb.extend (create {EV_CELL})
 
 				start_waiting (lab)
-				create t.make_with_interval (3_000)
-				t.actions.extend_kamikaze (agent check_request_cloud_sign_in (cld, rqst, lab, b))
+				check_request_cloud_sign_in (cld, rqst, lab, b)
 
 				b.propagate_background_color
+				if attached alternative_login_box as alt_box and then not alt_box.is_destroyed then
+					alt_box.hide
+				end
 
 			else
 				report_cloud_sign_in_error (cloud_service, locale.translation_in_context ("could not request Sign-in", "cloud.error"), b)
@@ -450,11 +457,16 @@ feature -- Mode selection
 			create lab.make_with_text (cloud_names.label_error_message (err))
 			b.extend (lab)
 
-			create but.make_with_text ("TRY AGAIN")
+			create but.make_with_text (locale.translation_in_context ("TRY AGAIN", "eiffel.account"))
+			but.set_font (fonts.highlighted_label_font)
 			but.select_actions.extend (agent request_cloud_sign_in (cld, b))
 			but.set_background_color (colors.stock_colors.red)
 			but.set_foreground_color (colors.stock_colors.white)
 			but.set_minimum_width (scaler.scaled_size (100))
+
+			if attached alternative_login_box as alt_box and then not alt_box.is_destroyed then
+				alt_box.show
+			end
 
 			b.extend (but)
 			b.disable_item_expand (but)
@@ -468,9 +480,6 @@ feature -- Mode selection
 		do
 			if not cld.is_available then
 				cld.async_check_availability (False)
-
-				create t.make_with_interval (3_000)
-				t.actions.extend_kamikaze (agent check_request_cloud_sign_in (cld, rqst, lab, b))
 			else
 				if cld.is_signed_in and then attached cld.active_account as acc then
 						-- Already authenticated !!!
@@ -479,7 +488,6 @@ feature -- Mode selection
 					cld.check_cloud_sign_in_request (rqst)
 					if rqst.is_approved or rqst.has_error then
 						stop_waiting
---						print ("EXIT Sign-in request status checking ...%N")
 							-- Exit
 						b.wipe_out
 						create l_mesg
@@ -506,14 +514,26 @@ feature -- Mode selection
 						elseif rqst.has_error then
 							err := rqst.error_message
 							report_cloud_sign_in_error (cld, err, b)
+						else
+							check False end
+							err := "Unexpected case"
+							report_cloud_sign_in_error (cld, err, b)
 						end
 					else
-						create t.make_with_interval (5_000)
-						t.actions.extend_kamikaze (agent check_request_cloud_sign_in (cld, rqst, lab, b))
+						t := check_request_cloud_sign_in_timer
+						if t = Void or else t.is_destroyed then
+							create t.make_with_interval (5_000)
+							t.actions.extend (agent check_request_cloud_sign_in (cld, rqst, lab, b))
+							check_request_cloud_sign_in_timer := t
+						else
+							-- wait for next timeout event ...
+						end
 					end
 				end
 			end
 		end
+
+	check_request_cloud_sign_in_timer: detachable EV_TIMEOUT
 
 	waiting_timer: detachable EV_TIMEOUT
 
@@ -565,6 +585,10 @@ feature -- Mode selection
 				t.destroy
 				waiting_timer := Void
 			end
+			if attached check_request_cloud_sign_in_timer as t then
+				t.destroy
+				check_request_cloud_sign_in_timer := Void
+			end
 		end
 
 	set_register_mode (fr: EV_FRAME)
@@ -583,6 +607,7 @@ feature -- Mode selection
 			fr.extend (b)
 			b.show
 			fr.propagate_background_color
+			alternative_login_box := Void
 		end
 
 	new_credential_sign_box: EV_VERTICAL_BOX
@@ -819,6 +844,8 @@ feature -- Status report
 		end
 
 feature -- Optional properties
+
+	alternative_login_box: detachable EV_WIDGET
 
 	username_input: detachable EV_TEXT_FIELD
 

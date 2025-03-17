@@ -55,7 +55,7 @@ feature -- Access
 			-- Defined as a word two bytes.
 			-- see MethodSemanticsAttributes https://www.ecma-international.org/wp-content/uploads/ECMA-335_6th_edition_june_2012.pdf#page=279&zoom=100,116,684
 
-	method: PE_METHOD_LIST
+	method: PE_METHOD_DEF
 			-- an index into the MethodDef table
 
 	association: PE_SEMANTICS
@@ -83,7 +83,7 @@ feature -- Operations
 			l_bytes: NATURAL_32
 		do
 				-- Write semantics to the destination buffer `a_dest`.
-			{BYTE_ARRAY_HELPER}.put_array_natural_16 (a_dest, semantics, 0)
+			{BYTE_ARRAY_HELPER}.put_natural_16 (a_dest, semantics, 0)
 
 				-- Intialize the number of bytes written
 			l_bytes := 2
@@ -101,7 +101,7 @@ feature -- Operations
 			l_bytes: NATURAL_32
 		do
 				-- Set the semantiics (from a_src)  to semantics
-			semantics := {BYTE_ARRAY_HELPER}.byte_array_to_natural_16 (a_src, 0)
+			semantics := {BYTE_ARRAY_HELPER}.natural_16_at (a_src, 0)
 
 				-- Intialize the number of bytes.
 			l_bytes := 2

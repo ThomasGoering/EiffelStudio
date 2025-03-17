@@ -27,7 +27,7 @@
 	</target>
 	<target name="compile_framework_20">
 		<echo message="- Compile .Net framework 2.0 [EiffelSoftware.Runtime.dll]" />
-		<exec executable="nmake msbuild_20" if="${is_windows}"/>
+		<exec executable="nmake msbuild_20" if="${is_windows}" accept_errors="true"/>
 	</target>
 	<target name="install_framework_20" depend="compile_framework_20">
 		<echo message="- Install .Net framework 2.0 [EiffelSoftware.Runtime.dll]" />
@@ -35,7 +35,7 @@
 	</target>
 	<target name="compile_framework_40">
 		<echo message="- Compile .Net framework 4.0 [EiffelSoftware.Runtime.dll]" />
-		<exec executable="nmake msbuild_40" if="${is_windows}"/>
+		<exec executable="nmake msbuild_40" if="${is_windows}" accept_errors="true"/>
 	</target>
 	<target name="install_framework_40" depend="compile_framework_40">
 		<echo message="- Install .Net framework 4.0 [EiffelSoftware.Runtime.dll]" />
@@ -59,6 +59,7 @@
 		<delete directory="${cwd}${path_separator}obj" />
 	</target>
 	<target name="install_netcore_debug">
+		<mkdir directory="${cwd}${path_separator}netcore" />
 		<echo message="- Install .Net CORE [EiffelSoftware.Runtime.dll] into ${cwd}${path_separator}netcore" />
 		<exec executable="dotnet publish -c Debug runtime_core.csproj --output ${cwd}${path_separator}netcore" />
 		<delete directory="${cwd}${path_separator}bin" />
